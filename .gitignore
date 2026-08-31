@@ -1,0 +1,22 @@
+node_modules/
+dist/
+release/
+*.js.map
+*.d.ts
+*.d.ts.map
+
+# SQLite databases (user-specific; never commit)
+*.db
+*.db-wal
+*.db-shm
+
+# Log files
+logs/
+*.log
+
+# Electron builder artifacts
+.electron-gyp/
+
+# OS
+.DS_Store
+Thumbs.db
