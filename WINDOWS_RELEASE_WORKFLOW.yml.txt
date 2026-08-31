@@ -1,0 +1,90 @@
+name: Windows Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "scanner-agent-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Restore packaged setup window
+        shell: pwsh
+        run: |
+          node -e "const fs=require('fs'),z=require('zlib'),p='renderer/setup/index.html.gz.b64';fs.writeFileSync('renderer/setup/index.html',z.gunzipSync(Buffer.from(fs.readFileSync(p,'utf8'),'base64')));fs.unlinkSync(p)"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify tag, package, and runtime version parity
+        run: pnpm run verify-version
+      - name: Build unpacked application
+        run: |
+          pnpm run build
+          pnpm exec electron-builder --win --x64 --dir --publish never
+      - name: Build versioned NSIS installer
+        env:
+          CSC_LINK: ${{ secrets.SCANNER_AGENT_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.SCANNER_AGENT_CSC_KEY_PASSWORD }}
+        run: pnpm run dist:win
+      - name: Verify installer and record checksum
+        run: pnpm run verify-release
+      - name: Load native modules in packaged Electron runtime
+        shell: pwsh
+        run: |
+          & ".\release\win-unpacked\Presentail Scanner Agent.exe" --verify-packaged-runtime
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaged Electron runtime verification failed with exit code $LASTEXITCODE"
+          }
+      - name: Retain installer and update manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: scanner-agent-windows-${{ github.ref_name }}
+          path: |
+            release/Presentail-Scanner-Agent-*-x64.exe
+            release/latest.yml
+            release/SHA256SUMS.txt
+            release/RELEASE-METADATA.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Publish immutable version release
+        if: startsWith(github.ref, 'refs/tags/scanner-agent-v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            release/Presentail-Scanner-Agent-*-x64.exe \
+            release/latest.yml \
+            release/SHA256SUMS.txt \
+            release/RELEASE-METADATA.json \
+            --verify-tag --generate-notes
+      - name: Update scanner-specific auto-update channel
+        if: startsWith(github.ref, 'refs/tags/scanner-agent-v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view scanner-agent-current >/dev/null 2>&1; then
+            gh release create scanner-agent-current \
+              --target "$GITHUB_SHA" \
+              --title "Scanner Agent Current" \
+              --notes "Rolling update feed for packaged Presentail Scanner Agents."
+          fi
+          gh release upload scanner-agent-current \
+            release/Presentail-Scanner-Agent-*-x64.exe \
+            release/latest.yml \
+            release/SHA256SUMS.txt \
+            release/RELEASE-METADATA.json \
+            --clobber
