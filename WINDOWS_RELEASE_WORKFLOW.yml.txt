@@ -43,9 +43,13 @@ jobs:
       - name: Load native modules in packaged Electron runtime
         shell: pwsh
         run: |
-          & ".\release\win-unpacked\Presentail Scanner Agent.exe" --verify-packaged-runtime
-          if ($LASTEXITCODE -ne 0) {
-            throw "Packaged Electron runtime verification failed with exit code $LASTEXITCODE"
+          $process = Start-Process `
+            -FilePath ".\release\win-unpacked\Presentail Scanner Agent.exe" `
+            -ArgumentList "--verify-packaged-runtime" `
+            -Wait `
+            -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Packaged Electron runtime verification failed with exit code $($process.ExitCode)"
           }
       - name: Retain installer and update manifest
         uses: actions/upload-artifact@v4
