@@ -77,7 +77,7 @@
       "shortcutName": "Presentail Scanner Agent",
       "runAfterFinish": true,
       "installerLanguages": [
-        "English"
+        "en_US"
       ],
       "include": "installer/custom-nsis.nsh"
     },
