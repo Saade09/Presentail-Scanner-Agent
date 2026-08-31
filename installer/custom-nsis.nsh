@@ -60,7 +60,7 @@
   StrCmp $1 "" inbox_empty inbox_has_files
   inbox_has_files:
     FindClose $0
-    MessageBox MB_OKCANCEL|MB_ICONWARNING "C:\PresentailScanner\Inbox contains files that have NOT been uploaded.$\r$\n$\r$\nUninstalling now means these files will NOT be sent to Presentail OS.$\r$\n$\r$\nClick Cancel to abort and process the remaining files, or OK to continue." IDOK inbox_continue
+    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "C:\PresentailScanner\Inbox contains files that have NOT been uploaded.$\r$\n$\r$\nUninstalling now means these files will NOT be sent to Presentail OS.$\r$\n$\r$\nClick Cancel to abort and process the remaining files, or OK to continue." IDOK inbox_continue
     Abort
   inbox_continue:
     Goto inbox_done
@@ -78,7 +78,7 @@
   StrCmp $1 "" failed_empty failed_has_files
   failed_has_files:
     FindClose $0
-    MessageBox MB_OKCANCEL|MB_ICONWARNING "C:\PresentailScanner\Failed contains files that failed to upload.$\r$\n$\r$\nThese files need manual review before you uninstall.$\r$\n$\r$\nClick Cancel to abort, or OK to continue uninstalling." IDOK failed_continue
+    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "C:\PresentailScanner\Failed contains files that failed to upload.$\r$\n$\r$\nThese files need manual review before you uninstall.$\r$\n$\r$\nClick Cancel to abort, or OK to continue uninstalling." IDOK failed_continue
     Abort
   failed_continue:
     Goto failed_done
