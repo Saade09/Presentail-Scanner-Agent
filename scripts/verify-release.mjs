@@ -63,10 +63,17 @@ for (const packageName of ["keytar", "better-sqlite3"]) {
     packageName,
   );
   const nativeBinaries = findNativeBinaries(packageDir);
-  if (nativeBinaries.length === 0) {
-    throw new Error(`${packageName} contains no packaged .node binary`);
+  const windowsNativeBinaries = nativeBinaries.filter((path) => {
+    const normalized = path.replaceAll("\\", "/").toLowerCase();
+    return (
+      normalized.includes("/win32-x64/") ||
+      normalized.includes("/build/release/")
+    );
+  });
+  if (windowsNativeBinaries.length === 0) {
+    throw new Error(`${packageName} contains no packaged Windows x64 .node binary`);
   }
-  nativeBinaries.forEach(assertPeX64);
+  windowsNativeBinaries.forEach(assertPeX64);
 }
 
 const sha256 = createHash("sha256")
