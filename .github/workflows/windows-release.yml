@@ -43,7 +43,7 @@ jobs:
       - name: Load native modules in packaged Electron runtime
         shell: pwsh
         run: |
-                  $process = Start-Process `
+          $process = Start-Process `
             -FilePath ".\release\win-unpacked\Presentail Scanner Agent.exe" `
             -ArgumentList "--verify-packaged-runtime" `
             -Wait `
