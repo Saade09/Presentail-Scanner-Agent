@@ -349,6 +349,7 @@ app.on("ready", async () => {
       logger.info("Packaged runtime verification passed");
       app.exit(0);
     } catch (err) {
+      console.error("Packaged runtime verification failed:", String(err));
       logger.error("Packaged runtime verification failed", {
         error: String(err),
       });
