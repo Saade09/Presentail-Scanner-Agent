@@ -1,0 +1,85 @@
+{
+  "name": "@workspace/scanner-agent",
+  "version": "1.0.0",
+  "description": "Presentail Scanner Agent — Windows tray application for scan file upload",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "tsc --noEmit && electron .",
+    "build": "tsc",
+    "dist": "pnpm run dist:win",
+    "dist:win": "pnpm run build && electron-builder --win nsis --x64 --publish never",
+    "verify-version": "node scripts/verify-version.mjs",
+    "verify-release": "node scripts/verify-release.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "axios": "^1.18.0",
+    "better-sqlite3": "^9.6.0",
+    "chokidar": "^3.6.0",
+    "electron-updater": "^6.3.9",
+    "form-data": "^4.0.0",
+    "keytar": "^7.9.0",
+    "winston": "^3.13.0",
+    "winston-daily-rotate-file": "^5.0.0",
+    "winreg": "^1.2.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.2",
+    "@types/winreg": "^1.2.36",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.0",
+    "typescript": "^5.5.2"
+  },
+  "build": {
+    "appId": "com.presentail.scanner-agent",
+    "productName": "Presentail Scanner Agent",
+    "copyright": "Copyright © 2024 Presentail",
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*",
+      "renderer/**/*",
+      "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/keytar/**/*"
+    ],
+    "npmRebuild": true,
+    "buildDependenciesFromSource": false,
+    "artifactName": "Presentail-Scanner-Agent-${version}-${arch}.${ext}",
+    "extraFiles": [],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Presentail Scanner Agent",
+      "runAfterFinish": true,
+      "installerLanguages": ["English"],
+      "include": "installer/custom-nsis.nsh"
+    },
+    "publish": {
+      "provider": "generic",
+      "url": "https://github.com/Saade09/Presentail-Scanner-Agent/releases/download/scanner-agent-current"
+    }
+  }
+}
