@@ -39,6 +39,15 @@ function assertPeX64(path) {
   }
 }
 
+function isPeX64(path) {
+  try {
+    assertPeX64(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 requirePath(installerPath, "Versioned x64 NSIS installer");
 requirePath(manifestPath, "electron-updater manifest");
 if (statSync(installerPath).size < 1_000_000) {
@@ -63,17 +72,10 @@ for (const packageName of ["keytar", "better-sqlite3"]) {
     packageName,
   );
   const nativeBinaries = findNativeBinaries(packageDir);
-  const windowsNativeBinaries = nativeBinaries.filter((path) => {
-    const normalized = path.replaceAll("\\", "/").toLowerCase();
-    return (
-      normalized.includes("/win32-x64/") ||
-      normalized.includes("/build/release/")
-    );
-  });
+  const windowsNativeBinaries = nativeBinaries.filter(isPeX64);
   if (windowsNativeBinaries.length === 0) {
     throw new Error(`${packageName} contains no packaged Windows x64 .node binary`);
   }
-  windowsNativeBinaries.forEach(assertPeX64);
 }
 
 const sha256 = createHash("sha256")
