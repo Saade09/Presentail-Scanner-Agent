@@ -10,6 +10,11 @@
   const inputCode   = document.getElementById("pairing-code");
   const errorBanner = document.getElementById("error-banner");
   const successBanner = document.getElementById("success-banner");
+  const DEFAULT_OS_URL = "https://os.presentail.com";
+
+  if (!inputUrl.value.trim()) {
+    inputUrl.value = DEFAULT_OS_URL;
+  }
 
   // Auto-uppercase the pairing code field
   inputCode.addEventListener("input", () => {
@@ -57,7 +62,7 @@
         return null;
       }
     } catch {
-      showError("Please enter a valid URL (e.g. https://your-company.presentail.com)");
+      showError("Please enter a valid URL (e.g. https://os.presentail.com)");
       inputUrl.focus();
       return null;
     }
@@ -89,7 +94,7 @@
         inputCode.disabled = true;
         // Window will be closed by main process after short delay
       } else {
-        showError(result.error || "Pairing failed. Please check the code and try again.");
+        showError(result.error || "Pairing failed. Check the OS URL and generate a new code if this one expired.");
       }
     } catch (err) {
       showError("Unexpected error: " + String(err));

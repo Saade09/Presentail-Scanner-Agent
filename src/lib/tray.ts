@@ -18,6 +18,7 @@ interface TrayOptions {
   stationName: string;
   entityName: string;
   onRePair: () => void;
+  onOpenSetup: () => void;
   onQuit: () => void;
 }
 
@@ -74,7 +75,7 @@ export function destroyTray(): void {
 function refreshTray(): void {
   if (!tray || !trayOpts) return;
 
-  const { stationName, entityName, onRePair, onQuit } = trayOpts;
+  const { stationName, entityName, onRePair, onOpenSetup, onQuit } = trayOpts;
   const queuedCount = getCount();
 
   // Update icon
@@ -138,6 +139,13 @@ function refreshTray(): void {
         ]
       : []),
     { type: "separator" },
+    {
+      label: "Open pairing / settings…",
+      click: () => {
+        logger.info("Tray: user opened pairing/settings");
+        onOpenSetup();
+      },
+    },
     {
       label: "Re-pair station…",
       click: () => {

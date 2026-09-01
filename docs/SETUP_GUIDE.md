@@ -110,13 +110,21 @@ The HP ScanJet Pro 2600 f1 has a physical Scan button on the control panel.
 ### 3.1  Obtain the installer
 
 In Presentail OS, go to **Settings → Devices → Invoice Scanners** and click
-**Download Windows Agent**. The verified v1.0.0 release filename will be
+**Download Windows Agent**. The verified v1.0.0 release filename is
 `Presentail-Scanner-Agent-1.0.0-x64.exe`.
 
-> **Release status: MISSING until verified.** If the button says **Windows Agent
-> unavailable**, do not use the unrelated Print Agent Windows ZIP. Engineering
-> must publish the Windows workflow output, configure its filename and checksum,
-> and complete the packaged-PC acceptance checklist first.
+Verified release facts:
+
+- Immutable release: `scanner-agent-v1.0.0`
+- Installer size: `121,158,868` bytes
+- SHA-256: `3af3b536feca2fc090e14b987da43fe6fc39957ee6fdb71bfb9d14f85ea94915`
+- Release page: `https://github.com/Saade09/Presentail-Scanner-Agent/releases/tag/scanner-agent-v1.0.0`
+
+> **Installer artifact status: READY. Physical commissioning status: MISSING.**
+> If the button says **Windows Agent unavailable**, do not use the unrelated
+> Print Agent Windows ZIP. The production release metadata or deployment must be
+> repaired before installation. Commissioning remains MISSING until the
+> clean-PC install, restart, pairing, heartbeat, and first-PDF checks pass.
 
 ### 3.2  Run the installer
 
@@ -125,10 +133,10 @@ In Presentail OS, go to **Settings → Devices → Invoice Scanners** and click
 3. The installer wizard opens. Click **Next**.
 4. Accept the default installation directory (`C:\Users\<YourName>\AppData\Local\PresentailScannerAgent`) — **do not change this**.
 5. On the **Choose Start Menu Folder** screen, keep the default.
-6. On the **Additional Tasks** screen, decide whether to create a Desktop shortcut (optional; a Start Menu shortcut is always created).
-7. Click **Install**. No Administrator password is required.
-8. Leave **Launch Presentail Scanner Agent** ticked.
-9. Click **Finish**.
+6. Click **Install**. No Administrator password is required. A Start Menu
+   shortcut is created; this release does not create a Desktop shortcut.
+7. Leave **Launch Presentail Scanner Agent** ticked.
+8. Click **Finish**.
 
 The Presentail Scanner Agent setup window opens automatically.
 
@@ -141,19 +149,21 @@ The Presentail Scanner Agent setup window opens automatically.
 1. Log in to **Presentail OS** in a browser (on any computer).
 2. Go to **Settings → Devices → Invoice Scanners**.
 3. Click **Add Scanner Station**.
-4. Enter a station name (e.g., `Head Office Scanner 1`) and select the entity (the branch or company this scanner belongs to).
-5. Click **Generate Pairing Code**. An 8-character alphanumeric code appears (e.g., `XK9P2ABC`). It expires in **15 minutes**.
+4. Enter a station name (e.g., `Head Office Scanner 1`) and select the required active default entity (the branch or company that will receive this scanner's imports).
+5. Create the station, open its actions menu, and click **Generate pairing code**. The dialog shows the exact Presentail OS URL and an 8-character code. The code is single-use and expires in **15 minutes**.
 
 ### 4.2  Enter the pairing code in the agent
 
 1. In the **Presentail Scanner Agent Setup** window on the scanner PC:
-   - **Presentail OS URL:** enter the full URL of your Presentail OS instance (e.g., `https://os.presentail.com`)
+   - **Presentail OS URL:** copy the exact URL shown in the pairing dialog (for example, `https://os.presentail.com`)
    - **Pairing Code:** enter the 8-character code from step 4.1 (case-insensitive)
 2. Click **Pair**.
-3. On success, the setup window closes and the **Presentail Scanner Agent** tray icon appears in the system tray (bottom-right corner of the taskbar) with a **green** icon.
+3. On success, the setup window closes and the **Presentail Scanner Agent** tray icon appears in the system tray (bottom-right corner of the taskbar) with a **green** icon. Click the **∧ hidden-icons arrow** if it is not immediately visible.
 4. The agent is now active and will start watching `C:\PresentailScanner\Inbox` for scan files.
 
-> **If pairing fails:** Check that the Presentail OS URL has no trailing slash and that the code has not expired. Generate a new code and try again.
+> **If the setup window is hidden:** Launch **Presentail Scanner Agent** from the Start menu. If it is already running, find the tray icon. For a revoked credential or red icon, right-click → **Re-pair station…**.
+>
+> **If pairing fails:** Copy the OS URL exactly, confirm the station has an active default entity, and generate a new code if the old one expired or was already used.
 
 ---
 
@@ -167,7 +177,7 @@ The Presentail Scanner Agent setup window opens automatically.
 
 ### 5.2  Confirm upload in Presentail OS
 
-1. Within approximately **15 seconds**, open **Presentail OS → Recent Imports** (or the Invoice Scanner station detail page).
+1. Within approximately **15 seconds**, open **Presentail OS → Recent Imports**.
 2. The invoice should appear with status **Pending Review** or **Processed**.
 3. Confirm:
    - File moved from `C:\PresentailScanner\Inbox\` to `C:\PresentailScanner\Uploaded\`.
@@ -180,7 +190,10 @@ The Presentail Scanner Agent setup window opens automatically.
 | Tray icon is **amber** | No internet / server unreachable | Check network; the file will upload automatically when connectivity is restored |
 | Tray icon is **red** | Credential revoked | Right-click tray → **Re-pair station** |
 | File stays in `Inbox\` | Agent not running | Check system tray; launch from Start Menu if needed |
-| File in `Failed\` | Permanent upload error | Check `.error.json` sidecar file for the reason; contact Presentail support |
+| File in `Failed\` | Permanent upload error | Check the matching `.error.json` sidecar. If it mentions the default entity, edit the station to select an active entity and re-pair |
+
+The agent only watches files saved into the Inbox. It does not operate the HP
+scanner, install drivers, or choose HP Scan settings.
 
 ---
 
@@ -215,7 +228,7 @@ Clicking the notification downloads the update in the background. The update is 
 4. Configure Presentail OS with the release URL, exact filename, version, and
    SHA-256 from `RELEASE-METADATA.json`.
 5. Complete the clean-PC install, restart, pair, heartbeat, and test-PDF checks
-   before removing the **MISSING** status.
+   before changing physical commissioning from **MISSING** to **READY**.
 
 ---
 

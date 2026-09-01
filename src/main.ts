@@ -7,6 +7,7 @@ import {
 } from "electron";
 import * as path from "path";
 import * as os from "os";
+import * as fs from "fs";
 
 import { logger } from "./lib/logger.js";
 import { loadCredential, saveCredential, clearCredential } from "./lib/credential.js";
@@ -24,6 +25,45 @@ import type { TrayState } from "./lib/retryScheduler.js";
 export const AGENT_VERSION = app.getVersion();
 const SCANNER_ROOT = "C:\\PresentailScanner";
 const PACKAGED_RUNTIME_CHECK = process.argv.includes("--verify-packaged-runtime");
+const FIRST_RUN_SMOKE_TEST = process.argv.includes("--smoke-test-first-run");
+const LOCAL_APP_DATA =
+  process.env.LOCALAPPDATA || process.env.APPDATA || os.homedir();
+const STARTUP_LOG_DIR = path.join(
+  LOCAL_APP_DATA,
+  "PresentailScannerAgent",
+  "logs",
+);
+const STARTUP_LOG_PATH = path.join(STARTUP_LOG_DIR, "startup.log");
+const FIRST_RUN_SMOKE_PATH = path.join(
+  LOCAL_APP_DATA,
+  "PresentailScannerAgent",
+  "first-run-smoke.json",
+);
+
+function startupLog(phase: string, details: Record<string, unknown> = {}): void {
+  try {
+    fs.mkdirSync(STARTUP_LOG_DIR, { recursive: true });
+    fs.appendFileSync(
+      STARTUP_LOG_PATH,
+      `${JSON.stringify({
+        timestamp: new Date().toISOString(),
+        version: AGENT_VERSION,
+        executablePath: process.execPath,
+        appDataPath: LOCAL_APP_DATA,
+        phase,
+        ...details,
+      })}\n`,
+      "utf8",
+    );
+  } catch {
+    // Startup logging must never prevent the agent from launching.
+  }
+}
+
+// Electron requires this before the app reaches the ready state. Calling it
+// from the ready handler throws before the first-run window or tray is created.
+app.disableHardwareAcceleration();
+startupLog("application-start");
 
 /**
  * Auto-update feed URL.
@@ -56,6 +96,30 @@ interface AgentState {
 
 let agentState: AgentState | null = null;
 let setupWindow: BrowserWindow | null = null;
+let setupRendererLoaded = false;
+let trayInitialized = false;
+
+function writeFirstRunSmokeResult(): void {
+  if (!FIRST_RUN_SMOKE_TEST || !setupRendererLoaded || !trayInitialized) return;
+  try {
+    fs.mkdirSync(path.dirname(FIRST_RUN_SMOKE_PATH), { recursive: true });
+    fs.writeFileSync(
+      FIRST_RUN_SMOKE_PATH,
+      JSON.stringify({
+        pid: process.pid,
+        setupWindowCreated: Boolean(setupWindow && !setupWindow.isDestroyed()),
+        setupWindowVisible: Boolean(setupWindow?.isVisible()),
+        rendererLoaded: setupRendererLoaded,
+        trayInitialized,
+        credentialExists: Boolean(agentState?.token),
+      }),
+      "utf8",
+    );
+    startupLog("first-run-smoke-ready");
+  } catch (err) {
+    startupLog("first-run-smoke-write-failed", { error: String(err) });
+  }
+}
 
 // ── Pairing window ────────────────────────────────────────────────────────────
 
@@ -67,7 +131,7 @@ function openSetupWindow(): void {
 
   setupWindow = new BrowserWindow({
     width: 480,
-    height: 400,
+    height: 540,
     resizable: false,
     title: "Presentail Scanner Agent — Setup",
     autoHideMenuBar: true,
@@ -77,10 +141,24 @@ function openSetupWindow(): void {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  startupLog("pairing-window-created", { visible: setupWindow.isVisible() });
 
-  setupWindow.loadFile(
-    path.join(app.getAppPath(), "renderer", "setup", "index.html")
-  );
+  const setupPath = path.join(app.getAppPath(), "renderer", "setup", "index.html");
+  logger.info("Setup window: loading renderer", { setupPath });
+  void setupWindow.loadFile(setupPath)
+    .then(() => {
+      setupRendererLoaded = true;
+      logger.info("Setup window: renderer loaded");
+      startupLog("renderer-load-success");
+      writeFirstRunSmokeResult();
+    })
+    .catch((err) => {
+      logger.error("Setup window: renderer failed to load", {
+        setupPath,
+        error: String(err),
+      });
+      startupLog("renderer-load-failure", { error: String(err) });
+    });
 
   setupWindow.on("closed", () => {
     setupWindow = null;
@@ -125,7 +203,13 @@ ipcMain.handle(
 
       const data = response.data as {
         token: string;
-        station: { id: number; name: string; entity_id: number | null; location: string | null };
+        station: {
+          id: number;
+          name: string;
+          default_entity_id: number;
+          default_entity_name: string;
+          location: string | null;
+        };
       };
 
       const saved = await saveCredential(data.token);
@@ -148,6 +232,11 @@ ipcMain.handle(
         "station-name",
         data.station.name
       );
+      await keytarModule.setPassword(
+        "PresentailScannerAgent",
+        "entity-name",
+        data.station.default_entity_name
+      );
 
       logger.info("IPC: pairing successful", { stationId: data.station.id });
 
@@ -158,7 +247,7 @@ ipcMain.handle(
         serverUrl,
         token: data.token,
         stationName: data.station.name,
-        entityName: "",
+        entityName: data.station.default_entity_name,
         isCredentialRevoked: false,
       };
 
@@ -195,8 +284,12 @@ function startAgentServices(state: AgentState): void {
     stationName: state.stationName,
     entityName: state.entityName,
     onRePair: handleRePair,
+    onOpenSetup: openSetupWindow,
     onQuit: () => app.quit(),
   });
+  trayInitialized = true;
+  startupLog("tray-initialized", { state: "paired" });
+  writeFirstRunSmokeResult();
 
   startRetryScheduler({
     serverUrl: state.serverUrl,
@@ -217,6 +310,7 @@ function startAgentServices(state: AgentState): void {
   });
 
   startWatcher({ inboxDir: inbox });
+  startupLog("watcher-initialized", { inbox });
 
   updateTrayState("connected");
   logger.info("Agent services started", { stationName: state.stationName });
@@ -338,6 +432,7 @@ function setupAutoUpdater(): void {
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.on("ready", async () => {
+  startupLog("ready-handler-entered");
   if (PACKAGED_RUNTIME_CHECK) {
     try {
       const keytarModule = await import("keytar");
@@ -357,9 +452,6 @@ app.on("ready", async () => {
     }
     return;
   }
-
-  // Disable GPU acceleration for a background tray process
-  app.disableHardwareAcceleration();
 
   logger.info("Agent starting", { version: AGENT_VERSION, platform: process.platform });
 
@@ -382,14 +474,19 @@ app.on("ready", async () => {
   let token: string | null = null;
   let serverUrl: string | null = null;
   let stationName = "Unknown Station";
+  let entityName = "";
 
   try {
     token = await loadCredential();
+    startupLog("credential-check-complete", { credentialExists: Boolean(token) });
     const keytarModule = await import("keytar");
     serverUrl = await keytarModule.getPassword("PresentailScannerAgent", "server-url");
     stationName =
       (await keytarModule.getPassword("PresentailScannerAgent", "station-name")) ??
       stationName;
+    entityName =
+      (await keytarModule.getPassword("PresentailScannerAgent", "entity-name")) ??
+      entityName;
   } catch (err) {
     logger.warn("Could not load saved credentials", { error: String(err) });
   }
@@ -400,19 +497,24 @@ app.on("ready", async () => {
       serverUrl,
       token,
       stationName,
-      entityName: "",
+      entityName,
       isCredentialRevoked: false,
     };
     startAgentServices(agentState);
   } else {
+    startupLog("unpaired-first-run");
     logger.info("No credential — opening setup window");
     openSetupWindow();
     createTray({
       stationName: "Not paired",
       entityName: "",
       onRePair: handleRePair,
+      onOpenSetup: openSetupWindow,
       onQuit: () => app.quit(),
     });
+    trayInitialized = true;
+    startupLog("tray-initialized", { state: "unpaired" });
+    writeFirstRunSmokeResult();
     updateTrayState("unpaired");
   }
 });
@@ -440,9 +542,11 @@ app.on("before-quit", () => {
 
 // Catch unhandled exceptions and log them (never crash silently)
 process.on("uncaughtException", (err) => {
+  startupLog("fatal-uncaught-exception", { error: String(err), stack: err.stack });
   logger.error("Uncaught exception", { error: String(err), stack: err.stack });
 });
 
 process.on("unhandledRejection", (reason) => {
+  startupLog("fatal-unhandled-rejection", { error: String(reason) });
   logger.error("Unhandled rejection", { reason: String(reason) });
 });

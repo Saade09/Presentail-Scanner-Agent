@@ -16,6 +16,9 @@
 
 ## Scanning an Invoice
 
+The Presentail Scanner Agent does not control the scanner. It watches for files
+that HP Scan or other scanner software saves to `C:\PresentailScanner\Inbox`.
+
 1. **Place the invoice** in the ADF (the tray at the top of the scanner), face-down, top edge first
 2. **Press the Scan button** on the scanner panel  
    _(or open HP Scan on the PC and click **Invoice to Presentail**)_
@@ -60,7 +63,15 @@ The Presentail Scanner Agent icon lives in the system tray — bottom-right corn
 
 1. Check the tray icon — if blue, wait for the current upload to finish
 2. If the icon is green but the invoice is missing, check **Presentail OS → Recent Imports** and refresh
-3. If the file is in `C:\PresentailScanner\Failed\`, there was a permanent error — contact Presentail support and do **not** delete the file
+3. If the file is in `C:\PresentailScanner\Uploaded\`, refresh **Recent Imports**
+4. If the file is in `C:\PresentailScanner\Failed\`, open the matching `.error.json` file for the reason. Ask a manager to confirm the station has an active default entity, then re-pair if instructed. Do **not** delete the failed scan.
+
+### Agent setup window is missing
+
+1. Open **Start → Presentail Scanner Agent**
+2. If no window opens, click the **∧ hidden-icons arrow** in the Windows taskbar; the agent may already be running in the tray
+3. If the tray icon is red or the credential was revoked, right-click it and choose **Re-pair station…**
+4. In Presentail OS, generate a fresh code if the previous code expired
 
 ### Scanner misfeed / paper jam
 
