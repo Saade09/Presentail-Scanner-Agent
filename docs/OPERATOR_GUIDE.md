@@ -16,6 +16,9 @@
 
 ## Scanning an Invoice
 
+The Presentail Scanner Agent does not control the scanner. It watches for files
+that HP Scan or other scanner software saves to `C:\PresentailScanner\Inbox`.
+
 1. **Place the invoice** in the ADF (the tray at the top of the scanner), face-down, top edge first
 2. **Press the Scan button** on the scanner panel  
    _(or open HP Scan on the PC and click **Invoice to Presentail**)_
@@ -42,8 +45,10 @@ The Presentail Scanner Agent icon lives in the system tray — bottom-right corn
 |-------------|---------|------------|
 | 🟢 **Green** | Connected and ready | Nothing — scan away |
 | 🔵 **Blue** | Uploading a file | Wait; do not restart the PC |
-| 🟡 **Amber** | Offline or queued | Check internet connection; files will upload automatically when connectivity is restored — **do not rescan** |
-| 🔴 **Red** | Credential error — agent paused | Contact your IT team or Presentail support |
+| 🟡 **Amber** | Presentail OS cannot be reached; scans are queued | Check the internet connection; files upload automatically when connectivity returns — **do not rescan** |
+| 🔴 **Red — Credential rejected** | Presentail OS rejected this device credential; agent paused | Ask a manager to generate a fresh code, then right-click → **Re-pair station…** |
+| 🔴 **Red — Station disabled** | The station is disabled in Presentail OS | Ask a manager to enable it, generate a fresh code, then re-pair |
+| 🔴 **Red — Setup required** | The default entity is missing or inactive | Ask a manager to select an active default entity, generate a fresh code, then re-pair |
 | No icon | Agent not running | Launch from Start Menu → Presentail Scanner Agent |
 
 ---
@@ -56,11 +61,29 @@ The Presentail Scanner Agent icon lives in the system tray — bottom-right corn
 2. If no internet, scanned files are safely queued and will upload when connectivity is restored
 3. If internet is working but icon stays amber, right-click the tray icon → **Open Log Folder** and call Presentail support
 
+### Tray icon is red
+
+Read the full status line before acting:
+
+1. **Credential rejected:** ask a manager to generate a fresh one-time code in Presentail OS.
+2. **Station disabled:** ask a manager to enable the station first, then generate a fresh code.
+3. **Setup required:** ask a manager to edit the station and select an active default entity first, then generate a fresh code.
+4. Right-click the tray icon → **Re-pair station…**. Wait for the setup window before entering the fresh code. The agent preserves queued scans while replacing the old pairing.
+5. After pairing, confirm the tray is green and the station's **Last seen** time updates in Presentail OS.
+
 ### Invoice did not appear in Presentail OS
 
 1. Check the tray icon — if blue, wait for the current upload to finish
 2. If the icon is green but the invoice is missing, check **Presentail OS → Recent Imports** and refresh
-3. If the file is in `C:\PresentailScanner\Failed\`, there was a permanent error — contact Presentail support and do **not** delete the file
+3. If the file is in `C:\PresentailScanner\Uploaded\`, refresh **Recent Imports**
+4. If the file is in `C:\PresentailScanner\Failed\`, open the matching `.error.json` file for the reason. Ask a manager to confirm the station has an active default entity, then re-pair if instructed. Do **not** delete the failed scan.
+
+### Agent setup window is missing
+
+1. Open **Start → Presentail Scanner Agent**
+2. If no window opens, click the **∧ hidden-icons arrow** in the Windows taskbar; the agent may already be running in the tray
+3. If the tray icon is red, read its status and fix any disabled-station or default-entity issue in Presentail OS
+4. Generate a fresh code, right-click the tray icon, and choose **Re-pair station…**
 
 ### Scanner misfeed / paper jam
 

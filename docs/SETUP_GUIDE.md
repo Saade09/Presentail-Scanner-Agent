@@ -110,13 +110,22 @@ The HP ScanJet Pro 2600 f1 has a physical Scan button on the control panel.
 ### 3.1  Obtain the installer
 
 In Presentail OS, go to **Settings → Devices → Invoice Scanners** and click
-**Download Windows Agent**. The verified v1.0.0 release filename will be
-`Presentail-Scanner-Agent-1.0.0-x64.exe`.
+**Download Windows Agent**. The re-pairing-fix release filename is
+`Presentail-Scanner-Agent-1.0.2-x64.exe`.
 
-> **Release status: MISSING until verified.** If the button says **Windows Agent
-> unavailable**, do not use the unrelated Print Agent Windows ZIP. Engineering
-> must publish the Windows workflow output, configure its filename and checksum,
-> and complete the packaged-PC acceptance checklist first.
+Before installing, confirm the checksum and download URL in the matching
+`RELEASE-METADATA.json` published with the release:
+
+- Immutable release: `scanner-agent-v1.0.2`
+- Installer: `Presentail-Scanner-Agent-1.0.2-x64.exe`
+- Release page: `https://github.com/Saade09/Presentail-Scanner-Agent/releases/tag/scanner-agent-v1.0.2`
+
+> **Installer artifact status: PENDING until the 1.0.2 workflow passes. Physical
+> commissioning status: MISSING.**
+> If the button says **Windows Agent unavailable**, do not use the unrelated
+> Print Agent Windows ZIP. The production release metadata or deployment must be
+> repaired before installation. Commissioning remains MISSING until the
+> clean-PC install, restart, pairing, heartbeat, and first-PDF checks pass.
 
 ### 3.2  Run the installer
 
@@ -125,10 +134,10 @@ In Presentail OS, go to **Settings → Devices → Invoice Scanners** and click
 3. The installer wizard opens. Click **Next**.
 4. Accept the default installation directory (`C:\Users\<YourName>\AppData\Local\PresentailScannerAgent`) — **do not change this**.
 5. On the **Choose Start Menu Folder** screen, keep the default.
-6. On the **Additional Tasks** screen, decide whether to create a Desktop shortcut (optional; a Start Menu shortcut is always created).
-7. Click **Install**. No Administrator password is required.
-8. Leave **Launch Presentail Scanner Agent** ticked.
-9. Click **Finish**.
+6. Click **Install**. No Administrator password is required. A Start Menu
+   shortcut is created; this release does not create a Desktop shortcut.
+7. Leave **Launch Presentail Scanner Agent** ticked.
+8. Click **Finish**.
 
 The Presentail Scanner Agent setup window opens automatically.
 
@@ -141,19 +150,25 @@ The Presentail Scanner Agent setup window opens automatically.
 1. Log in to **Presentail OS** in a browser (on any computer).
 2. Go to **Settings → Devices → Invoice Scanners**.
 3. Click **Add Scanner Station**.
-4. Enter a station name (e.g., `Head Office Scanner 1`) and select the entity (the branch or company this scanner belongs to).
-5. Click **Generate Pairing Code**. An 8-character alphanumeric code appears (e.g., `XK9P2ABC`). It expires in **15 minutes**.
+4. Enter a station name (e.g., `Head Office Scanner 1`) and select the required active default entity (the branch or company that will receive this scanner's imports).
+5. Create the station, open its actions menu, and click **Generate pairing code**. The dialog shows the exact Presentail OS URL and an 8-character code. The code is single-use and expires in **15 minutes**.
 
 ### 4.2  Enter the pairing code in the agent
 
 1. In the **Presentail Scanner Agent Setup** window on the scanner PC:
-   - **Presentail OS URL:** enter the full URL of your Presentail OS instance (e.g., `https://os.presentail.com`)
+   - **Presentail OS URL:** copy the exact URL shown in the pairing dialog (for example, `https://os.presentail.com`)
    - **Pairing Code:** enter the 8-character code from step 4.1 (case-insensitive)
-2. Click **Pair**.
-3. On success, the setup window closes and the **Presentail Scanner Agent** tray icon appears in the system tray (bottom-right corner of the taskbar) with a **green** icon.
+2. Click **Pair**. The window stays open while the complete credential record is
+   saved, read back, and verified by an authenticated heartbeat.
+3. Only after that heartbeat succeeds, the setup window closes and the
+   **Presentail Scanner Agent** tray icon appears in the system tray
+   (bottom-right corner of the taskbar) with a **green** icon. Click the
+   **∧ hidden-icons arrow** if it is not immediately visible.
 4. The agent is now active and will start watching `C:\PresentailScanner\Inbox` for scan files.
 
-> **If pairing fails:** Check that the Presentail OS URL has no trailing slash and that the code has not expired. Generate a new code and try again.
+> **If the setup window is hidden:** Launch **Presentail Scanner Agent** from the Start menu. If it is already running, find the tray icon. If the server rejected the credential, right-click → **Re-pair station…**, wait for the setup window, then use a freshly generated code.
+>
+> **If pairing fails:** Copy the OS URL exactly, confirm the station is enabled, confirm it has an active default entity, and generate a fresh code if the old one expired or was already used. The agent finishes removing the previous local pairing before it accepts the new credential; queued scans are preserved.
 
 ---
 
@@ -167,20 +182,28 @@ The Presentail Scanner Agent setup window opens automatically.
 
 ### 5.2  Confirm upload in Presentail OS
 
-1. Within approximately **15 seconds**, open **Presentail OS → Recent Imports** (or the Invoice Scanner station detail page).
+1. Within approximately **15 seconds**, open **Presentail OS → Recent Imports**.
 2. The invoice should appear with status **Pending Review** or **Processed**.
 3. Confirm:
    - File moved from `C:\PresentailScanner\Inbox\` to `C:\PresentailScanner\Uploaded\`.
    - Tray icon shows **green** (connected).
+    - The station's **Last seen** time updates in **Settings → Devices → Invoice Scanners**.
+4. Restart the agent from the Start menu and confirm the tray returns to green and **Last seen** updates again. This verifies the new credential was saved in Windows Credential Manager.
 
 ### 5.3  If the test scan does not appear
 
 | Symptom | Likely cause | Action |
 |---------|-------------|--------|
-| Tray icon is **amber** | No internet / server unreachable | Check network; the file will upload automatically when connectivity is restored |
-| Tray icon is **red** | Credential revoked | Right-click tray → **Re-pair station** |
+| Tray says **Offline / queued — check network** | No internet / server unreachable | Check network; the file will upload automatically when connectivity is restored |
+| Tray says **Credential rejected — re-pair required** | Presentail OS rejected or revoked the device credential | In Presentail OS, generate a fresh code; right-click tray → **Re-pair station** and use that code |
+| Tray says **Station disabled** | The station is disabled in Presentail OS | Enable the station, generate a fresh code, and re-pair |
+| Tray says **Setup required — select an active entity** | Default entity is missing or inactive | Edit the station, select an active default entity, generate a fresh code, and re-pair |
+| Setup shows a pairing result category and reference ID | Pairing, storage, first-heartbeat, or network validation failed | Copy the category and reference ID into the acceptance record; never copy the pairing code or credential |
 | File stays in `Inbox\` | Agent not running | Check system tray; launch from Start Menu if needed |
-| File in `Failed\` | Permanent upload error | Check `.error.json` sidecar file for the reason; contact Presentail support |
+| File in `Failed\` | Permanent file/upload error | Check the matching `.error.json` sidecar. Credential, disabled-station, and entity-configuration failures remain queued instead of moving the scan to `Failed\` |
+
+The agent only watches files saved into the Inbox. It does not operate the HP
+scanner, install drivers, or choose HP Scan settings.
 
 ---
 
@@ -215,7 +238,7 @@ Clicking the notification downloads the update in the background. The update is 
 4. Configure Presentail OS with the release URL, exact filename, version, and
    SHA-256 from `RELEASE-METADATA.json`.
 5. Complete the clean-PC install, restart, pair, heartbeat, and test-PDF checks
-   before removing the **MISSING** status.
+   before changing physical commissioning from **MISSING** to **READY**.
 
 ---
 

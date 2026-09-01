@@ -10,6 +10,12 @@
   const inputCode   = document.getElementById("pairing-code");
   const errorBanner = document.getElementById("error-banner");
   const successBanner = document.getElementById("success-banner");
+  const DEFAULT_OS_URL = "https://os.presentail.com";
+  let pairingInProgress = false;
+
+  if (!inputUrl.value.trim()) {
+    inputUrl.value = DEFAULT_OS_URL;
+  }
 
   // Auto-uppercase the pairing code field
   inputCode.addEventListener("input", () => {
@@ -23,6 +29,19 @@
     errorBanner.style.display = "block";
     successBanner.style.display = "none";
   }
+
+  const categoryLabels = {
+    missing_code: "Pairing code missing",
+    invalid_code: "Pairing code rejected",
+    expired_code: "Pairing code expired",
+    used_code: "Pairing code already used",
+    station_disabled: "Station disabled",
+    inactive_entity: "Invalid station entity",
+    secure_storage_failure: "Secure storage failed",
+    post_pair_authentication_failure: "Authentication failed after pairing",
+    network_api_failure: "Network or API unavailable",
+    api_error: "Pairing API error",
+  };
 
   function clearError() {
     errorBanner.style.display = "none";
@@ -56,8 +75,13 @@
         inputUrl.focus();
         return null;
       }
+      if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+        showError("Use only the Presentail OS origin, without credentials, query parameters, or fragments.");
+        inputUrl.focus();
+        return null;
+      }
     } catch {
-      showError("Please enter a valid URL (e.g. https://your-company.presentail.com)");
+      showError("Please enter a valid URL (e.g. https://os.presentail.com)");
       inputUrl.focus();
       return null;
     }
@@ -72,11 +96,13 @@
   }
 
   async function handlePair() {
+    if (pairingInProgress) return;
     clearError();
 
     const payload = validateInputs();
     if (!payload) return;
 
+    pairingInProgress = true;
     setLoading(true);
 
     try {
@@ -89,11 +115,16 @@
         inputCode.disabled = true;
         // Window will be closed by main process after short delay
       } else {
-        showError(result.error || "Pairing failed. Please check the code and try again.");
+        const label = categoryLabels[result.category] || "Pairing failed";
+        const reference = result.correlationId
+          ? ` Reference: ${result.correlationId}`
+          : "";
+        showError(`${label}: ${result.error || "Confirm the station is enabled, select an active default entity, and generate a fresh code."}${reference}`);
       }
     } catch (err) {
-      showError("Unexpected error: " + String(err));
+      showError("Pairing could not be completed. Check the network and Presentail OS URL, then try again.");
     } finally {
+      pairingInProgress = false;
       setLoading(false);
     }
   }

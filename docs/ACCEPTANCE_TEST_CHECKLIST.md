@@ -4,12 +4,15 @@
 **PC Hostname:** ___________________  
 **Date:** ___________________  
 **Tester:** ___________________  
-**Agent version:** ___________________
-**Installer filename:** ___________________
-**SHA-256 (from RELEASE-METADATA.json):** ___________________
+**Agent version:** `1.0.2`
+**Installer filename:** `Presentail-Scanner-Agent-1.0.2-x64.exe`
+**SHA-256 (from RELEASE-METADATA.json):** `PENDING WINDOWS BUILD`
 
-> **Release readiness: MISSING** until a versioned installer is downloaded from
-> Presentail OS and every packaged-runtime item in Sections 3, 4, 6, and 8 passes.
+> **Installer artifact: PENDING WINDOWS BUILD** — Linux cannot cross-compile
+> the native keytar and better-sqlite3 modules. Do not set Download Ready to
+> YES until Windows CI publishes the installer, manifest, metadata, and
+> checksum. **Physical commissioning: MISSING** until that exact downloaded
+> installer passes the HQ 2 checks below.
 
 ---
 
@@ -131,6 +134,23 @@ Mark each item `[x]` when passed, or record the failure notes in the **Notes** c
 | M4 | **Tray menu** — Right-click tray icon shows station name, entity, Re-pair option, and Quit | ⚠ Requires physical validation | `[ ]` | |
 | M5 | **Log files present** — `%APPDATA%\PresentailScannerAgent\logs\` contains structured JSON log entries | ⚠ Requires physical validation | `[ ]` | |
 | M6 | **Single instance** — Launching the agent a second time focuses the setup window (if open) rather than starting a second process | Automated — passes in CI | `[ ]` | |
+
+### Required HQ 2 re-pair evidence
+
+Record only correlation IDs, statuses, station IDs, versions, and timestamps.
+Never paste a pairing code, credential, token hash, or Authorization header.
+
+| Result field | Required evidence | Result |
+|---|---|---|
+| ROOT CAUSE | Installed version plus correlation-linked client/server logs | `PENDING PHYSICAL TEST` |
+| PAIR REQUEST RESULT | POST endpoint, timestamp, HTTP status, result category, correlation ID | `PENDING PHYSICAL TEST` |
+| CREDENTIAL STORAGE RESULT | Save/readback/restart logs with HQ 2 station ID and `credentialExists: true` | `PENDING PHYSICAL TEST` |
+| HEARTBEAT RESULT | First heartbeat 2xx plus OS last-seen/version/queue count | `PENDING PHYSICAL TEST` |
+| RACE CONDITION FOUND | Old-generation late 401 regression and physical result | `YES IN CODE; PENDING PHYSICAL CONFIRMATION` |
+| FIXED VERSION | Tray, startup log, heartbeat, and installer properties agree | `1.0.2` |
+| INSTALLER FILENAME | Versioned x64 NSIS filename | `Presentail-Scanner-Agent-1.0.2-x64.exe` |
+| DOWNLOAD READY | Published URL, filename, version, and checksum agree | `NO — PENDING WINDOWS BUILD` |
+| PACKAGED WINDOWS PAIRING TEST | Fresh code, first heartbeat, restart persistence, HQ 2 Connected | `FAIL — NOT YET RUN` |
 
 ---
 

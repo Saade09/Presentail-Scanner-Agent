@@ -54,3 +54,19 @@ export function notifyCredentialRevoked(): void {
     "This device's credential was revoked. Open the tray icon to re-pair."
   );
 }
+
+/** 403 Forbidden — station is disabled in Presentail OS. */
+export function notifyStationDisabled(): void {
+  notify(
+    `${APP_NAME} — Station disabled`,
+    "Enable this scanner station in Presentail OS, then generate a fresh code and re-pair."
+  );
+}
+
+/** 409 Conflict — station needs an active default entity. */
+export function notifyConfigurationRequired(): void {
+  notify(
+    `${APP_NAME} — Setup required`,
+    "Select an active default entity in Presentail OS, then generate a fresh code and re-pair."
+  );
+}

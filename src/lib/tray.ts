@@ -11,13 +11,17 @@ const ICON_FILES: Record<TrayState, string> = {
   uploading: "icon-uploading.png",
   offline:   "icon-offline.png",
   error:     "icon-error.png",
+  disabled:  "icon-error.png",
+  configuration: "icon-error.png",
   unpaired:  "icon-error.png",
 };
 
 interface TrayOptions {
   stationName: string;
   entityName: string;
+  agentVersion: string;
   onRePair: () => void;
+  onOpenSetup: () => void;
   onQuit: () => void;
 }
 
@@ -74,7 +78,7 @@ export function destroyTray(): void {
 function refreshTray(): void {
   if (!tray || !trayOpts) return;
 
-  const { stationName, entityName, onRePair, onQuit } = trayOpts;
+  const { stationName, entityName, agentVersion, onRePair, onOpenSetup, onQuit } = trayOpts;
   const queuedCount = getCount();
 
   // Update icon
@@ -88,16 +92,29 @@ function refreshTray(): void {
   const stateLabel: Record<TrayState, string> = {
     connected: "Connected",
     uploading: "Uploading…",
-    offline:   "Offline / Queued",
-    error:     "Error — re-pair required",
+    offline:   "Offline / queued — check network",
+    error:     "Credential rejected — re-pair required",
+    disabled:  "Station disabled — enable in Presentail OS",
+    configuration: "Setup required — select an active entity",
     unpaired:  "Not paired",
+  };
+  const stateGuidance: Record<TrayState, string> = {
+    connected: "Ready to scan.",
+    uploading: "Uploading a scan to Presentail OS.",
+    offline: "Presentail OS cannot be reached. Check the network; queued files will retry.",
+    error: "Presentail OS rejected this device credential. Generate a fresh code in Presentail OS and choose Re-pair station…",
+    disabled: "This station is disabled in Presentail OS. Enable it, generate a fresh code, and choose Re-pair station…",
+    configuration: "This station needs an active default entity. Fix it in Presentail OS, generate a fresh code, and choose Re-pair station…",
+    unpaired: "Generate a fresh pairing code in Presentail OS, then choose Open pairing / settings…",
   };
 
   const tooltipLines = [
     `Presentail Scanner Agent`,
     `Station: ${stationName || "unknown"}`,
     `Entity: ${entityName || "—"}`,
+    `Version: ${agentVersion}`,
     `Status: ${stateLabel[currentState]}`,
+    `Action: ${stateGuidance[currentState]}`,
     queuedCount > 0 ? `Queued: ${queuedCount}` : "",
     lastUploadAt ? `Last upload: ${lastUploadAt}` : "",
   ]
@@ -122,6 +139,10 @@ function refreshTray(): void {
       enabled: false,
     },
     {
+      label: `Version: ${agentVersion}`,
+      enabled: false,
+    },
+    {
       label: `Status: ${stateLabel[currentState]}`,
       enabled: false,
     },
@@ -138,6 +159,13 @@ function refreshTray(): void {
         ]
       : []),
     { type: "separator" },
+    {
+      label: "Open pairing / settings…",
+      click: () => {
+        logger.info("Tray: user opened pairing/settings");
+        onOpenSetup();
+      },
+    },
     {
       label: "Re-pair station…",
       click: () => {

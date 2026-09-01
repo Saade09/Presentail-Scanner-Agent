@@ -7,7 +7,7 @@ import { contextBridge, ipcRenderer } from "electron";
 contextBridge.exposeInMainWorld("scanner", {
   /**
    * Submit pairing credentials.
-   * Returns { success: true } or { success: false, error: string }.
+   * Returns a machine-readable category and a secret-safe correlation ID.
    */
   pair: (payload: { serverUrl: string; pairingCode: string }) =>
     ipcRenderer.invoke("scanner:pair", payload),

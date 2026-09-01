@@ -7,23 +7,77 @@ import {
 } from "electron";
 import * as path from "path";
 import * as os from "os";
+import * as fs from "fs";
+import { randomUUID } from "crypto";
 
 import { logger } from "./lib/logger.js";
-import { loadCredential, saveCredential, clearCredential } from "./lib/credential.js";
+import {
+  loadPairingRecord,
+  loadLegacyPairingRecord,
+  clearLegacyPairingState,
+  saveAndVerifyPairingRecord,
+  clearPairingState,
+  type PairingRecord,
+} from "./lib/credential.js";
 import { closeQueue } from "./lib/queue.js";
 import { startWatcher, stopWatcher } from "./lib/watcher.js";
 import { startRetryScheduler, stopRetryScheduler } from "./lib/retryScheduler.js";
-import { startHeartbeat, stopHeartbeat } from "./lib/heartbeat.js";
+import {
+  sendImmediateHeartbeat,
+  startHeartbeat,
+  stopHeartbeat,
+} from "./lib/heartbeat.js";
 import { createTray, updateTrayState, destroyTray } from "./lib/tray.js";
 import { enableAutoStart } from "./lib/autostart.js";
 import { ensureScannerDirs } from "./lib/fileOps.js";
 import type { TrayState } from "./lib/retryScheduler.js";
+import { runPairingReset } from "./lib/pairingReset.js";
+import { PairingAttemptLock } from "./lib/pairingAttemptLock.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 export const AGENT_VERSION = app.getVersion();
 const SCANNER_ROOT = "C:\\PresentailScanner";
 const PACKAGED_RUNTIME_CHECK = process.argv.includes("--verify-packaged-runtime");
+const FIRST_RUN_SMOKE_TEST = process.argv.includes("--smoke-test-first-run");
+const LOCAL_APP_DATA =
+  process.env.LOCALAPPDATA || process.env.APPDATA || os.homedir();
+const STARTUP_LOG_DIR = path.join(
+  LOCAL_APP_DATA,
+  "PresentailScannerAgent",
+  "logs",
+);
+const STARTUP_LOG_PATH = path.join(STARTUP_LOG_DIR, "startup.log");
+const FIRST_RUN_SMOKE_PATH = path.join(
+  LOCAL_APP_DATA,
+  "PresentailScannerAgent",
+  "first-run-smoke.json",
+);
+
+function startupLog(phase: string, details: Record<string, unknown> = {}): void {
+  try {
+    fs.mkdirSync(STARTUP_LOG_DIR, { recursive: true });
+    fs.appendFileSync(
+      STARTUP_LOG_PATH,
+      `${JSON.stringify({
+        timestamp: new Date().toISOString(),
+        version: AGENT_VERSION,
+        executablePath: process.execPath,
+        appDataPath: LOCAL_APP_DATA,
+        phase,
+        ...details,
+      })}\n`,
+      "utf8",
+    );
+  } catch {
+    // Startup logging must never prevent the agent from launching.
+  }
+}
+
+// Electron requires this before the app reaches the ready state. Calling it
+// from the ready handler throws before the first-run window or tray is created.
+app.disableHardwareAcceleration();
+startupLog("application-start");
 
 /**
  * Auto-update feed URL.
@@ -49,13 +103,53 @@ if (!gotLock) {
 interface AgentState {
   serverUrl: string;
   token: string;
+  stationId: number;
   stationName: string;
   entityName: string;
+  correlationId: string;
   isCredentialRevoked: boolean;
 }
 
 let agentState: AgentState | null = null;
 let setupWindow: BrowserWindow | null = null;
+let setupRendererLoaded = false;
+let trayInitialized = false;
+let rePairResetPromise: Promise<boolean> | null = null;
+let pairingStatePrepared = false;
+const pairingAttemptLock = new PairingAttemptLock();
+
+function normalizeServerUrl(input: string): string {
+  const parsed = new URL(input);
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Unsupported server URL protocol");
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error("Server URL must not contain credentials");
+  }
+  return parsed.origin;
+}
+
+function writeFirstRunSmokeResult(): void {
+  if (!FIRST_RUN_SMOKE_TEST || !setupRendererLoaded || !trayInitialized) return;
+  try {
+    fs.mkdirSync(path.dirname(FIRST_RUN_SMOKE_PATH), { recursive: true });
+    fs.writeFileSync(
+      FIRST_RUN_SMOKE_PATH,
+      JSON.stringify({
+        pid: process.pid,
+        setupWindowCreated: Boolean(setupWindow && !setupWindow.isDestroyed()),
+        setupWindowVisible: Boolean(setupWindow?.isVisible()),
+        rendererLoaded: setupRendererLoaded,
+        trayInitialized,
+        credentialExists: Boolean(agentState?.token),
+      }),
+      "utf8",
+    );
+    startupLog("first-run-smoke-ready");
+  } catch (err) {
+    startupLog("first-run-smoke-write-failed", { error: String(err) });
+  }
+}
 
 // ── Pairing window ────────────────────────────────────────────────────────────
 
@@ -67,7 +161,7 @@ function openSetupWindow(): void {
 
   setupWindow = new BrowserWindow({
     width: 480,
-    height: 400,
+    height: 540,
     resizable: false,
     title: "Presentail Scanner Agent — Setup",
     autoHideMenuBar: true,
@@ -77,10 +171,24 @@ function openSetupWindow(): void {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  startupLog("pairing-window-created", { visible: setupWindow.isVisible() });
 
-  setupWindow.loadFile(
-    path.join(app.getAppPath(), "renderer", "setup", "index.html")
-  );
+  const setupPath = path.join(app.getAppPath(), "renderer", "setup", "index.html");
+  logger.info("Setup window: loading renderer", { setupPath });
+  void setupWindow.loadFile(setupPath)
+    .then(() => {
+      setupRendererLoaded = true;
+      logger.info("Setup window: renderer loaded");
+      startupLog("renderer-load-success");
+      writeFirstRunSmokeResult();
+    })
+    .catch((err) => {
+      logger.error("Setup window: renderer failed to load", {
+        setupPath,
+        error: String(err),
+      });
+      startupLog("renderer-load-failure", { error: String(err) });
+    });
 
   setupWindow.on("closed", () => {
     setupWindow = null;
@@ -96,12 +204,69 @@ ipcMain.handle(
     payload: { serverUrl: string; pairingCode: string }
   ) => {
     const { serverUrl, pairingCode } = payload;
-    logger.info("IPC: pairing initiated", { serverUrl });
+    const releasePairingAttempt = pairingAttemptLock.acquire();
+    if (!releasePairingAttempt) {
+      return {
+        success: false,
+        error: "Pairing is already in progress. Please wait for it to finish.",
+      };
+    }
+    let normalizedServerUrl: string;
+    try {
+      normalizedServerUrl = normalizeServerUrl(serverUrl);
+    } catch {
+      releasePairingAttempt();
+      return {
+        success: false,
+        category: "api_error",
+        error: "Enter a valid Presentail OS URL without credentials, query parameters, or fragments.",
+      };
+    }
+    logger.info("IPC: pairing initiated", {
+      endpoint: `${normalizedServerUrl}/api/scanner/pair`,
+    });
 
     try {
-      const axios = (await import("axios")).default;
+      // A tray re-pair may still be finishing its asynchronous shutdown.
+      // Never save a new credential until that reset has completed.
+      if (rePairResetPromise) {
+        const resetSucceeded = await rePairResetPromise;
+        if (!resetSucceeded) {
+          return {
+            success: false,
+            error:
+              "Could not clear the previous pairing from Windows Credential Manager. No new credential was saved.",
+          };
+        }
+      }
+
+      // Always prepare persisted state before accepting a new credential.
+      // This also clears partial records (for example, a token whose server
+      // metadata is missing) that do not produce a live agentState at startup.
+      if (!pairingStatePrepared) {
+        const resetSucceeded = await resetAgentForPairing();
+        if (!resetSucceeded) {
+          return {
+            success: false,
+            error:
+              "Could not clear the previous pairing from Windows Credential Manager. No new credential was saved.",
+          };
+        }
+      }
+      pairingStatePrepared = false;
+
+      const requestCorrelationId = randomUUID();
+      const endpoint = `${normalizedServerUrl}/api/scanner/pair`;
+      const axiosModule = await import("axios");
+      const axios = axiosModule.default;
+      logger.info("Pairing request dispatch", {
+        timestamp: new Date().toISOString(),
+        correlationId: requestCorrelationId,
+        method: "POST",
+        endpoint,
+      });
       const response = await axios.post(
-        `${serverUrl.replace(/\/$/, "")}/api/scanner/pair`,
+        endpoint,
         {
           code: pairingCode.trim().toUpperCase(),
           device_info: {
@@ -111,64 +276,195 @@ ipcMain.handle(
             agent_version: AGENT_VERSION,
           },
         },
-        { timeout: 15_000, validateStatus: () => true }
+        {
+          headers: { "X-Correlation-ID": requestCorrelationId },
+          timeout: 15_000,
+          validateStatus: () => true,
+        }
       );
 
+      const responseBody = response.data as Record<string, unknown>;
+      const resultCategory =
+        typeof responseBody?.result === "string"
+          ? responseBody.result
+          : response.status === 200
+            ? "accepted"
+            : "api_error";
+      logger.info("Pairing request completed", {
+        timestamp: new Date().toISOString(),
+        correlationId: requestCorrelationId,
+        method: "POST",
+        endpoint,
+        statusCode: response.status,
+        result: resultCategory,
+      });
+
       if (response.status !== 200) {
-        const message =
-          (response.data as Record<string, unknown>)?.error as string | undefined;
+        const message = responseBody?.error as string | undefined;
         return {
           success: false,
+          category: resultCategory,
+          correlationId: requestCorrelationId,
           error: message ?? `Server returned ${response.status}`,
         };
       }
 
       const data = response.data as {
-        token: string;
-        station: { id: number; name: string; entity_id: number | null; location: string | null };
+        result: "accepted";
+        correlation_id: string;
+        credential: {
+          token: string;
+          token_type: "Bearer";
+          issued_at: string;
+          expires_at: string | null;
+        };
+        station: {
+          id: number;
+          name: string;
+          default_entity_id: number;
+          default_entity_name: string;
+          location: string | null;
+        };
       };
 
-      const saved = await saveCredential(data.token);
-      if (!saved) {
+      if (
+        data.result !== "accepted" ||
+        !data.credential?.token ||
+        !Number.isInteger(data.station?.id) ||
+        !Number.isInteger(data.station?.default_entity_id)
+      ) {
         return {
           success: false,
-          error: "Could not save credential to Windows Credential Manager.",
+          category: "api_error",
+          correlationId: requestCorrelationId,
+          error: "Presentail OS returned an incomplete pairing response.",
         };
       }
 
-      // Persist server URL alongside token (store as separate keytar account)
-      const keytarModule = await import("keytar");
-      await keytarModule.setPassword(
-        "PresentailScannerAgent",
-        "server-url",
-        serverUrl
-      );
-      await keytarModule.setPassword(
-        "PresentailScannerAgent",
-        "station-name",
-        data.station.name
-      );
+      const record: PairingRecord = {
+        schemaVersion: 1,
+        serverUrl: normalizedServerUrl,
+        token: data.credential.token,
+        station: {
+          id: data.station.id,
+          name: data.station.name,
+          defaultEntityId: data.station.default_entity_id,
+          defaultEntityName: data.station.default_entity_name,
+          location: data.station.location,
+        },
+        credential: {
+          tokenType: data.credential.token_type,
+          issuedAt: data.credential.issued_at,
+          expiresAt: data.credential.expires_at,
+        },
+        correlationId: data.correlation_id || requestCorrelationId,
+      };
+      const verifiedRecord = await saveAndVerifyPairingRecord(record);
+      if (!verifiedRecord || verifiedRecord.station.id !== data.station.id) {
+        return {
+          success: false,
+          category: "secure_storage_failure",
+          correlationId: record.correlationId,
+          error: "Windows Credential Manager could not save and verify the complete pairing record.",
+        };
+      }
 
-      logger.info("IPC: pairing successful", { stationId: data.station.id });
+      logger.info("Pairing credential storage verified", {
+        stationId: verifiedRecord.station.id,
+        credentialExists: true,
+        correlationId: verifiedRecord.correlationId,
+      });
+
+      const heartbeatResult = await sendImmediateHeartbeat(
+        {
+          serverUrl: verifiedRecord.serverUrl,
+          token: verifiedRecord.token,
+          agentVersion: AGENT_VERSION,
+          onStateChange: () => undefined,
+          onCredentialRevoked: () => undefined,
+          onStationDisabled: () => undefined,
+          onConfigurationRequired: () => undefined,
+        },
+        verifiedRecord.correlationId,
+      );
+      logger.info("Post-pair heartbeat completed", {
+        stationId: verifiedRecord.station.id,
+        correlationId: verifiedRecord.correlationId,
+        statusCode: heartbeatResult.statusCode,
+        result: heartbeatResult.kind,
+        queuedCount: heartbeatResult.queuedCount,
+      });
+      if (heartbeatResult.kind !== "success") {
+        const category =
+          heartbeatResult.kind === "credential-revoked"
+            ? "post_pair_authentication_failure"
+            : heartbeatResult.kind === "station-disabled"
+              ? "station_disabled"
+              : heartbeatResult.kind === "configuration-required"
+                ? "inactive_entity"
+                : "network_api_failure";
+        if (category !== "network_api_failure") {
+          await clearPairingState();
+        }
+        return {
+          success: false,
+          category,
+          correlationId: verifiedRecord.correlationId,
+          error:
+            category === "post_pair_authentication_failure"
+              ? "The new credential was saved but rejected by Presentail OS during verification. Generate a fresh code and try again."
+              : category === "station_disabled"
+                ? "The station was disabled before its first heartbeat. Enable it and generate a fresh code."
+                : category === "inactive_entity"
+                  ? "The station has no active default entity. Fix it in Presentail OS and generate a fresh code."
+              : "The pairing record was saved, but Presentail OS could not verify the first heartbeat. Check the network and restart the agent to retry without using another code.",
+        };
+      }
+
+      logger.info("IPC: pairing successful after authenticated heartbeat", {
+        stationId: data.station.id,
+        correlationId: verifiedRecord.correlationId,
+      });
 
       await enableAutoStart();
 
       // Start agent with the new credential
       agentState = {
-        serverUrl,
-        token: data.token,
-        stationName: data.station.name,
-        entityName: "",
+        serverUrl: verifiedRecord.serverUrl,
+        token: verifiedRecord.token,
+        stationId: verifiedRecord.station.id,
+        stationName: verifiedRecord.station.name,
+        entityName: verifiedRecord.station.defaultEntityName,
+        correlationId: verifiedRecord.correlationId,
         isCredentialRevoked: false,
       };
 
-      startAgentServices(agentState);
+      startAgentServices(agentState, true);
       setupWindow?.close();
 
-      return { success: true };
+      return {
+        success: true,
+        category: "accepted",
+        correlationId: verifiedRecord.correlationId,
+      };
     } catch (err) {
       logger.error("IPC: pairing error", { error: String(err) });
-      return { success: false, error: String(err) };
+      const axiosModule = await import("axios");
+      if (axiosModule.default.isAxiosError(err)) {
+        return {
+          success: false,
+          category: "network_api_failure",
+          error:
+            "Presentail OS could not be reached. Check the OS URL and network connection, then try again.",
+        };
+      }
+      return {
+        success: false,
+        category: "api_error",
+        error: "Pairing could not be completed. Check the setup and try again.",
+      };
+    } finally {
+      releasePairingAttempt();
     }
   }
 );
@@ -181,22 +477,44 @@ function onStateChange(state: TrayState): void {
 
 function onCredentialRevoked(): void {
   if (agentState) agentState.isCredentialRevoked = true;
-  stopWatcher();
-  stopRetryScheduler();
-  stopHeartbeat();
   updateTrayState("error");
+  void stopAgentServices();
   logger.error("Credential revoked — agent paused; user must re-pair");
 }
 
-function startAgentServices(state: AgentState): void {
+function onStationDisabled(): void {
+  updateTrayState("disabled");
+  void stopAgentServices();
+  logger.error("Station disabled — agent paused; enable it and re-pair");
+}
+
+function onConfigurationRequired(): void {
+  updateTrayState("configuration");
+  void stopAgentServices();
+  logger.error("Station configuration required — select an active entity and re-pair");
+}
+
+async function stopAgentServices(): Promise<void> {
+  await Promise.all([stopWatcher(), stopRetryScheduler(), stopHeartbeat()]);
+}
+
+function startAgentServices(
+  state: AgentState,
+  initialHeartbeatAuthenticated = false,
+): void {
   const { inbox, uploaded, failed } = ensureScannerDirs(SCANNER_ROOT);
 
   createTray({
     stationName: state.stationName,
     entityName: state.entityName,
+    agentVersion: AGENT_VERSION,
     onRePair: handleRePair,
+    onOpenSetup: openSetupWindow,
     onQuit: () => app.quit(),
   });
+  trayInitialized = true;
+  startupLog("tray-initialized", { state: "paired" });
+  writeFirstRunSmokeResult();
 
   startRetryScheduler({
     serverUrl: state.serverUrl,
@@ -206,6 +524,8 @@ function startAgentServices(state: AgentState): void {
     failedDir: failed,
     onStateChange,
     onCredentialRevoked,
+    onStationDisabled,
+    onConfigurationRequired,
   });
 
   startHeartbeat({
@@ -214,28 +534,63 @@ function startAgentServices(state: AgentState): void {
     agentVersion: AGENT_VERSION,
     onStateChange,
     onCredentialRevoked,
+    onStationDisabled,
+    onConfigurationRequired,
   });
 
   startWatcher({ inboxDir: inbox });
+  startupLog("watcher-initialized", { inbox });
 
-  updateTrayState("connected");
-  logger.info("Agent services started", { stationName: state.stationName });
+  if (initialHeartbeatAuthenticated) {
+    updateTrayState("connected");
+  }
+  logger.info("Agent services started", {
+    stationId: state.stationId,
+    stationName: state.stationName,
+    version: AGENT_VERSION,
+    correlationId: state.correlationId,
+  });
+}
+
+async function resetAgentForPairing(): Promise<boolean> {
+  logger.info("Re-pair requested");
+
+  // Stop all services and wait for any in-flight request to finish before
+  // clearing the old credential. Queued files remain in the queue database.
+  const cleared = await runPairingReset({
+    stopWatcher,
+    stopRetryScheduler,
+    stopHeartbeat,
+    clearPairingState,
+  });
+  if (!cleared) {
+    updateTrayState("error");
+    logger.error("Re-pair aborted — previous pairing state could not be cleared");
+    return false;
+  }
+
+  agentState = null;
+  pairingStatePrepared = true;
+  updateTrayState("unpaired");
+  return true;
 }
 
 function handleRePair(): void {
-  logger.info("Re-pair requested");
+  if (rePairResetPromise) return;
 
-  // Stop all services
-  stopWatcher();
-  stopRetryScheduler();
-  stopHeartbeat();
-
-  // Clear stored credential
-  clearCredential().catch(() => undefined);
-
-  agentState = null;
-
-  openSetupWindow();
+  const reset = resetAgentForPairing().then((succeeded) => {
+    if (succeeded) openSetupWindow();
+    return succeeded;
+  });
+  rePairResetPromise = reset;
+  void reset.then(
+    () => {
+      if (rePairResetPromise === reset) rePairResetPromise = null;
+    },
+    () => {
+      if (rePairResetPromise === reset) rePairResetPromise = null;
+    },
+  );
 }
 
 // ── Auto-update ───────────────────────────────────────────────────────────────
@@ -338,6 +693,7 @@ function setupAutoUpdater(): void {
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.on("ready", async () => {
+  startupLog("ready-handler-entered");
   if (PACKAGED_RUNTIME_CHECK) {
     try {
       const keytarModule = await import("keytar");
@@ -358,9 +714,6 @@ app.on("ready", async () => {
     return;
   }
 
-  // Disable GPU acceleration for a background tray process
-  app.disableHardwareAcceleration();
-
   logger.info("Agent starting", { version: AGENT_VERSION, platform: process.platform });
 
   // Set CSP for renderer
@@ -378,41 +731,153 @@ app.on("ready", async () => {
   // Initialise auto-updater before loading credentials so it's ready from the start
   setupAutoUpdater();
 
-  // Load saved credentials
-  let token: string | null = null;
-  let serverUrl: string | null = null;
-  let stationName = "Unknown Station";
-
-  try {
-    token = await loadCredential();
-    const keytarModule = await import("keytar");
-    serverUrl = await keytarModule.getPassword("PresentailScannerAgent", "server-url");
-    stationName =
-      (await keytarModule.getPassword("PresentailScannerAgent", "station-name")) ??
-      stationName;
-  } catch (err) {
-    logger.warn("Could not load saved credentials", { error: String(err) });
+  let savedPairing = await loadPairingRecord();
+  if (!savedPairing) {
+    const legacyPairing = await loadLegacyPairingRecord();
+    if (legacyPairing) {
+      const migrationCorrelationId = randomUUID();
+      const migrationHeartbeat = await sendImmediateHeartbeat(
+        {
+          serverUrl: normalizeServerUrl(legacyPairing.serverUrl),
+          token: legacyPairing.token,
+          agentVersion: AGENT_VERSION,
+          onStateChange: () => undefined,
+          onCredentialRevoked: () => undefined,
+          onStationDisabled: () => undefined,
+          onConfigurationRequired: () => undefined,
+        },
+        migrationCorrelationId,
+      );
+      if (migrationHeartbeat.kind === "success" && migrationHeartbeat.station) {
+        savedPairing = await saveAndVerifyPairingRecord({
+          schemaVersion: 1,
+          serverUrl: normalizeServerUrl(legacyPairing.serverUrl),
+          token: legacyPairing.token,
+          station: migrationHeartbeat.station,
+          credential: {
+            tokenType: "Bearer",
+            issuedAt: new Date().toISOString(),
+            expiresAt: null,
+          },
+          correlationId:
+            migrationHeartbeat.correlationId || migrationCorrelationId,
+        });
+        if (savedPairing) {
+          await clearLegacyPairingState();
+          logger.info("Legacy pairing migrated and verified", {
+            stationId: savedPairing.station.id,
+            correlationId: savedPairing.correlationId,
+          });
+        }
+      }
+      if (!savedPairing) {
+        logger.warn("Legacy pairing migration deferred; split record preserved", {
+          heartbeatResult: migrationHeartbeat.kind,
+        });
+        agentState = {
+          serverUrl: normalizeServerUrl(legacyPairing.serverUrl),
+          token: legacyPairing.token,
+          stationId: migrationHeartbeat.station?.id ?? 0,
+          stationName:
+            migrationHeartbeat.station?.name ?? legacyPairing.stationName,
+          entityName:
+            migrationHeartbeat.station?.defaultEntityName ??
+            legacyPairing.entityName,
+          correlationId: migrationCorrelationId,
+          isCredentialRevoked: false,
+        };
+      }
+    }
   }
+  startupLog("credential-check-complete", {
+    credentialExists: Boolean(savedPairing?.token),
+    stationId: savedPairing?.station.id ?? null,
+  });
 
-  if (token && serverUrl) {
-    logger.info("Credential found — starting agent services");
+  if (savedPairing) {
+    const startupHeartbeat = await sendImmediateHeartbeat(
+      {
+        serverUrl: savedPairing.serverUrl,
+        token: savedPairing.token,
+        agentVersion: AGENT_VERSION,
+        onStateChange: () => undefined,
+        onCredentialRevoked: () => undefined,
+        onStationDisabled: () => undefined,
+        onConfigurationRequired: () => undefined,
+      },
+      savedPairing.correlationId,
+    );
+    logger.info("Startup pairing verification completed", {
+      stationId: savedPairing.station.id,
+      correlationId: savedPairing.correlationId,
+      result: startupHeartbeat.kind,
+      statusCode: startupHeartbeat.statusCode,
+    });
+    if (startupHeartbeat.kind !== "success") {
+      if (
+        startupHeartbeat.kind === "credential-revoked" ||
+        startupHeartbeat.kind === "station-disabled" ||
+        startupHeartbeat.kind === "configuration-required"
+      ) {
+        await clearPairingState();
+        agentState = null;
+      }
+      openSetupWindow();
+      createTray({
+        stationName: savedPairing.station.name,
+        entityName: savedPairing.station.defaultEntityName,
+        agentVersion: AGENT_VERSION,
+        onRePair: handleRePair,
+        onOpenSetup: openSetupWindow,
+        onQuit: () => app.quit(),
+      });
+      trayInitialized = true;
+      updateTrayState(
+        startupHeartbeat.kind === "credential-revoked"
+          ? "error"
+          : startupHeartbeat.kind === "station-disabled"
+            ? "disabled"
+            : startupHeartbeat.kind === "configuration-required"
+              ? "configuration"
+              : "offline",
+      );
+      return;
+    }
+    logger.info("Verified pairing record authenticated — starting agent services", {
+      stationId: savedPairing.station.id,
+      version: AGENT_VERSION,
+      correlationId: savedPairing.correlationId,
+    });
     agentState = {
-      serverUrl,
-      token,
-      stationName,
-      entityName: "",
+      serverUrl: savedPairing.serverUrl,
+      token: savedPairing.token,
+      stationId: savedPairing.station.id,
+      stationName: savedPairing.station.name,
+      entityName: savedPairing.station.defaultEntityName,
+      correlationId: savedPairing.correlationId,
       isCredentialRevoked: false,
     };
+    startAgentServices(agentState, true);
+  } else if (agentState) {
+    logger.info("Starting with preserved legacy pairing while migration is deferred", {
+      version: AGENT_VERSION,
+    });
     startAgentServices(agentState);
   } else {
+    startupLog("unpaired-first-run");
     logger.info("No credential — opening setup window");
     openSetupWindow();
     createTray({
       stationName: "Not paired",
       entityName: "",
+      agentVersion: AGENT_VERSION,
       onRePair: handleRePair,
+      onOpenSetup: openSetupWindow,
       onQuit: () => app.quit(),
     });
+    trayInitialized = true;
+    startupLog("tray-initialized", { state: "unpaired" });
+    writeFirstRunSmokeResult();
     updateTrayState("unpaired");
   }
 });
@@ -431,18 +896,18 @@ app.on("second-instance", () => {
 
 app.on("before-quit", () => {
   logger.info("Agent shutting down");
-  stopWatcher();
-  stopRetryScheduler();
-  stopHeartbeat();
+  void stopAgentServices();
   closeQueue();
   destroyTray();
 });
 
 // Catch unhandled exceptions and log them (never crash silently)
 process.on("uncaughtException", (err) => {
+  startupLog("fatal-uncaught-exception", { error: String(err), stack: err.stack });
   logger.error("Uncaught exception", { error: String(err), stack: err.stack });
 });
 
 process.on("unhandledRejection", (reason) => {
+  startupLog("fatal-unhandled-rejection", { error: String(reason) });
   logger.error("Unhandled rejection", { reason: String(reason) });
 });

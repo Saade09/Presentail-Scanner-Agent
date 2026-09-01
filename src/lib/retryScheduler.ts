@@ -2,14 +2,28 @@ import { dequeueDue, markDone, scheduleRetry, getCount } from "./queue.js";
 import { uploadFile } from "./uploader.js";
 import { moveFile, timestampedName } from "./fileOps.js";
 import { logger } from "./logger.js";
-import { notifySuccess, notifyQueued, notifyPermanentFailure, notifyCredentialRevoked } from "./notifications.js";
+import {
+  notifySuccess,
+  notifyQueued,
+  notifyPermanentFailure,
+  notifyCredentialRevoked,
+  notifyStationDisabled,
+  notifyConfigurationRequired,
+} from "./notifications.js";
 import * as path from "path";
 import * as fs from "fs";
 
 const RETRY_CHECK_INTERVAL_MS = 10_000; // check queue every 10 seconds
 
 export type TrayStateCallback = (state: TrayState) => void;
-export type TrayState = "connected" | "uploading" | "offline" | "error" | "unpaired";
+export type TrayState =
+  | "connected"
+  | "uploading"
+  | "offline"
+  | "error"
+  | "disabled"
+  | "configuration"
+  | "unpaired";
 
 interface SchedulerOptions {
   serverUrl: string;
@@ -19,38 +33,60 @@ interface SchedulerOptions {
   failedDir: string;
   onStateChange: TrayStateCallback;
   onCredentialRevoked: () => void;
+  onStationDisabled?: () => void;
+  onConfigurationRequired?: () => void;
 }
 
 let retryTimer: ReturnType<typeof setInterval> | null = null;
 let isRunning = false;
 let opts: SchedulerOptions | null = null;
+let activeProcessing: Promise<void> | null = null;
+const activeImmediateUploads = new Set<Promise<void>>();
+let schedulerGeneration = 0;
 
 /**
  * Start the retry scheduler. Checks the queue on interval.
  */
 export function startRetryScheduler(options: SchedulerOptions): void {
+  schedulerGeneration += 1;
   opts = options;
   if (retryTimer) return;
 
   logger.info("RetryScheduler: starting");
 
   // Process immediately on start (pick up items from last session)
-  void processDueEntries();
+  beginProcessing();
 
   retryTimer = setInterval(() => {
-    void processDueEntries();
+    beginProcessing();
   }, RETRY_CHECK_INTERVAL_MS);
 }
 
 /**
  * Stop the retry scheduler.
  */
-export function stopRetryScheduler(): void {
+export async function stopRetryScheduler(): Promise<void> {
   if (retryTimer) {
     clearInterval(retryTimer);
     retryTimer = null;
   }
+  schedulerGeneration += 1;
+  opts = null;
+  const activeRun = activeProcessing;
+  await Promise.all([
+    ...(activeRun ? [activeRun] : []),
+    ...activeImmediateUploads,
+  ]);
   logger.info("RetryScheduler: stopped");
+}
+
+function beginProcessing(): void {
+  if (activeProcessing || !opts) return;
+  const run = processDueEntries(opts, schedulerGeneration);
+  activeProcessing = run;
+  void run.finally(() => {
+    if (activeProcessing === run) activeProcessing = null;
+  });
 }
 
 /**
@@ -63,17 +99,33 @@ export async function attemptImmediateUpload(
   capturedAt: string
 ): Promise<void> {
   if (!opts) return;
-  await doUpload({ id: -1, filePath, sha256, capturedAt, attemptCount: 0 });
+  const options = opts;
+  const generation = schedulerGeneration;
+  const upload = doUpload({
+    id: -1,
+    filePath,
+    sha256,
+    capturedAt,
+    attemptCount: 0,
+  }, options, generation);
+  activeImmediateUploads.add(upload);
+  try {
+    await upload;
+  } finally {
+    activeImmediateUploads.delete(upload);
+  }
 }
 
-async function processDueEntries(): Promise<void> {
-  if (isRunning || !opts) return;
+async function processDueEntries(
+  options: SchedulerOptions,
+  generation: number,
+): Promise<void> {
+  if (isRunning || generation !== schedulerGeneration) return;
   isRunning = true;
 
   try {
     const due = dequeueDue();
     if (due.length === 0) {
-      opts.onStateChange("connected");
       return;
     }
 
@@ -86,7 +138,7 @@ async function processDueEntries(): Promise<void> {
         sha256: entry.sha256,
         capturedAt: entry.captured_at,
         attemptCount: entry.attempt_count,
-      });
+      }, options, generation);
     }
   } finally {
     isRunning = false;
@@ -101,9 +153,23 @@ interface UploadTask {
   attemptCount: number;
 }
 
-async function doUpload(task: UploadTask): Promise<void> {
-  if (!opts) return;
-  const { serverUrl, token, agentVersion, uploadedDir, failedDir, onStateChange, onCredentialRevoked } = opts;
+async function doUpload(
+  task: UploadTask,
+  options: SchedulerOptions,
+  generation: number,
+): Promise<void> {
+  if (generation !== schedulerGeneration) return;
+  const {
+    serverUrl,
+    token,
+    agentVersion,
+    uploadedDir,
+    failedDir,
+    onStateChange,
+    onCredentialRevoked,
+    onStationDisabled,
+    onConfigurationRequired,
+  } = options;
 
   // Skip if file no longer exists
   if (!fs.existsSync(task.filePath)) {
@@ -115,6 +181,13 @@ async function doUpload(task: UploadTask): Promise<void> {
   onStateChange("uploading");
 
   const result = await uploadFile(serverUrl, token, task.filePath, agentVersion);
+  if (generation !== schedulerGeneration) {
+    logger.info("Upload callback ignored for superseded pairing generation", {
+      filePath: task.filePath,
+      generation,
+    });
+    return;
+  }
 
   switch (result.kind) {
     case "success": {
@@ -154,9 +227,8 @@ async function doUpload(task: UploadTask): Promise<void> {
     }
 
     case "permanent": {
-      if (task.id > 0) markDone(task.id);
-
-      // Special case: 401 = credential revoked
+      // Authentication and station configuration failures must leave the
+      // file queued in Inbox. The operator can recover without losing scans.
       if (result.statusCode === 401) {
         logger.error("Upload: credential revoked (401)", { filePath: task.filePath });
         onCredentialRevoked();
@@ -164,6 +236,24 @@ async function doUpload(task: UploadTask): Promise<void> {
         onStateChange("error");
         break;
       }
+      if (result.statusCode === 403) {
+        logger.error("Upload: station disabled (403)", { filePath: task.filePath });
+        if (onStationDisabled) onStationDisabled();
+        else onStateChange("disabled");
+        notifyStationDisabled();
+        onStateChange("disabled");
+        break;
+      }
+      if (result.statusCode === 409) {
+        logger.error("Upload: station configuration required (409)", { filePath: task.filePath });
+        if (onConfigurationRequired) onConfigurationRequired();
+        else onStateChange("configuration");
+        notifyConfigurationRequired();
+        onStateChange("configuration");
+        break;
+      }
+
+      if (task.id > 0) markDone(task.id);
 
       const destName = timestampedName(path.basename(task.filePath));
       const destPath = path.join(failedDir, destName);

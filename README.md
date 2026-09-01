@@ -116,7 +116,7 @@ The installer is written to **`release/`**:
 
 ```
 release/
-├── Presentail-Scanner-Agent-1.0.0-x64.exe
+├── Presentail-Scanner-Agent-1.0.2-x64.exe
 ├── latest.yml
 ├── SHA256SUMS.txt
 └── RELEASE-METADATA.json

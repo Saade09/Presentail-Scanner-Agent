@@ -15,6 +15,7 @@ export interface WatcherOptions {
 
 let watcher: FSWatcher | null = null;
 let guard: FileStabilityGuard | null = null;
+const activeStableTasks = new Set<Promise<void>>();
 
 /**
  * Start watching the Inbox directory.
@@ -28,29 +29,10 @@ export function startWatcher(options: WatcherOptions): void {
 
   guard = new FileStabilityGuard();
 
-  guard.on("stable", async (filePath: string) => {
-    logger.info("Watcher: file stable, enqueuing", { filePath });
-
-    let buffer: Buffer;
-    try {
-      buffer = fs.readFileSync(filePath);
-    } catch (err) {
-      logger.error("Watcher: cannot read stable file", {
-        filePath,
-        error: String(err),
-      });
-      return;
-    }
-
-    const sha256     = computeSha256(buffer);
-    const mtime      = fs.statSync(filePath).mtime;
-    const capturedAt = mtime.toISOString();
-
-    // Persist to queue first so file survives a crash before upload completes
-    enqueue(filePath, sha256, capturedAt);
-
-    // Then attempt an immediate upload (retryScheduler will pick it up on failure)
-    await attemptImmediateUpload(filePath, sha256, capturedAt);
+  guard.on("stable", (filePath: string) => {
+    const task = handleStableFile(filePath);
+    activeStableTasks.add(task);
+    void task.finally(() => activeStableTasks.delete(task));
   });
 
   guard.on("gone", (filePath: string) => {
@@ -94,13 +76,44 @@ export function startWatcher(options: WatcherOptions): void {
   });
 }
 
+async function handleStableFile(filePath: string): Promise<void> {
+  logger.info("Watcher: file stable, enqueuing", { filePath });
+
+  let buffer: Buffer;
+  try {
+    buffer = fs.readFileSync(filePath);
+  } catch (err) {
+    logger.error("Watcher: cannot read stable file", {
+      filePath,
+      error: String(err),
+    });
+    return;
+  }
+
+  const sha256     = computeSha256(buffer);
+  const mtime      = fs.statSync(filePath).mtime;
+  const capturedAt = mtime.toISOString();
+
+  // Persist to queue first so file survives a crash before upload completes
+  enqueue(filePath, sha256, capturedAt);
+
+  // Then attempt an immediate upload (retryScheduler will pick it up on failure)
+  await attemptImmediateUpload(filePath, sha256, capturedAt);
+}
+
 /**
  * Stop the file watcher and stability guard.
  */
-export function stopWatcher(): void {
-  watcher?.close().catch(() => undefined);
+export async function stopWatcher(): Promise<void> {
+  const activeWatcher = watcher;
   watcher = null;
   guard?.destroy();
   guard = null;
+  if (activeWatcher) {
+    await activeWatcher.close().catch(() => undefined);
+  }
+  if (activeStableTasks.size > 0) {
+    await Promise.all([...activeStableTasks]);
+  }
   logger.info("Watcher: stopped");
 }

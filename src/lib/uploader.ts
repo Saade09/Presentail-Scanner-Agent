@@ -9,7 +9,7 @@ export type UploadResultKind =
   | "success"       // 202 — accepted, newly imported
   | "duplicate"     // 200 duplicate:true — already imported
   | "recoverable"   // network/timeout/429/5xx — retry later
-  | "permanent";    // 400/413/415/422/401 — move to Failed
+   | "permanent";    // 400/413/415/422 — move to Failed
 
 export interface UploadResult {
   kind: UploadResultKind;
@@ -19,7 +19,7 @@ export interface UploadResult {
 }
 
 const RECOVERABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
-const PERMANENT_STATUS_CODES   = new Set([400, 401, 413, 415, 422]);
+const PERMANENT_STATUS_CODES   = new Set([400, 401, 403, 409, 413, 415, 422]);
 
 /**
  * Compute SHA-256 hex digest from a file buffer.

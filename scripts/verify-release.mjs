@@ -91,6 +91,9 @@ writeFileSync(
       installer: expectedName,
       sha256,
       updateManifest: "latest.yml",
+      downloadUrl:
+        `https://github.com/Saade09/Presentail-Scanner-Agent/releases/download/` +
+        `scanner-agent-v${pkg.version}/${expectedName}`,
     },
     null,
     2,
