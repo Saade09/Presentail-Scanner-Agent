@@ -75,7 +75,7 @@ Configure each field as follows:
 | **Auto orientation** | On |
 | **Auto straighten / deskew** | On |
 | **Blank page removal** | On |
-| **Destination folder** | `C:\PresentailScanner\Inbox` |
+| **Destination folder** | `C:\Users\Presentail\Desktop\INBOX` |
 | **File name** | Any fixed prefix such as `invoice_` — do **not** enable filename prompt |
 | **Show preview** | Off (disabled) |
 | **Open after save** | Off (disabled) |
@@ -89,8 +89,8 @@ Configure each field as follows:
 2. The shortcut **Invoice to Presentail** should appear in the left panel of HP Scan.
 3. Load a test document in the ADF.
 4. Click the **Invoice to Presentail** shortcut.
-5. The scanner feeds and saves a PDF to `C:\PresentailScanner\Inbox\` (the agent is not yet running — that is fine, the file just sits there).
-6. Open `C:\PresentailScanner\Inbox\` in File Explorer and confirm the PDF is there.
+5. The scanner feeds and saves a PDF to `C:\Users\Presentail\Desktop\INBOX\` (the agent is not yet running — that is fine, the file just sits there).
+6. Open `C:\Users\Presentail\Desktop\INBOX\` in File Explorer and confirm the PDF is there.
 7. Delete the test file before continuing.
 
 ### 2.4  Assign preset to the physical Scan button (if supported)
@@ -110,18 +110,19 @@ The HP ScanJet Pro 2600 f1 has a physical Scan button on the control panel.
 ### 3.1  Obtain the installer
 
 In Presentail OS, go to **Settings → Devices → Invoice Scanners** and click
-**Download Windows Agent**. The re-pairing-fix release filename is
-`Presentail-Scanner-Agent-1.0.2-x64.exe`.
+**Download Windows Agent**. The configurable-inbox release filename is
+`Presentail-Scanner-Agent-1.0.3-x64.exe`.
 
 Before installing, confirm the checksum and download URL in the matching
 `RELEASE-METADATA.json` published with the release:
 
-- Immutable release: `scanner-agent-v1.0.2`
-- Installer: `Presentail-Scanner-Agent-1.0.2-x64.exe`
-- Release page: `https://github.com/Saade09/Presentail-Scanner-Agent/releases/tag/scanner-agent-v1.0.2`
+- Immutable release: `scanner-agent-v1.0.3`
+- Installer: `Presentail-Scanner-Agent-1.0.3-x64.exe`
+- Release page: `https://github.com/Saade09/Presentail-Scanner-Agent/releases/tag/scanner-agent-v1.0.3`
 
-> **Installer artifact status: PENDING until the 1.0.2 workflow passes. Physical
-> commissioning status: MISSING.**
+> **Installer artifact status: READY only after the 1.0.3 Windows workflow
+> publishes matching immutable and rolling-channel assets.
+> Physical commissioning status: MISSING.**
 > If the button says **Windows Agent unavailable**, do not use the unrelated
 > Print Agent Windows ZIP. The production release metadata or deployment must be
 > repaired before installation. Commissioning remains MISSING until the
@@ -158,13 +159,18 @@ The Presentail Scanner Agent setup window opens automatically.
 1. In the **Presentail Scanner Agent Setup** window on the scanner PC:
    - **Presentail OS URL:** copy the exact URL shown in the pairing dialog (for example, `https://os.presentail.com`)
    - **Pairing Code:** enter the 8-character code from step 4.1 (case-insensitive)
+    - **HP Scan Destination Folder:** enter the exact folder configured in the
+      HP Scan preset. On the commissioned PC use
+      `C:\Users\Presentail\Desktop\INBOX`. Existing PCs that still scan to
+      `C:\PresentailScanner\Inbox` can keep that default.
 2. Click **Pair**. The window stays open while the complete credential record is
    saved, read back, and verified by an authenticated heartbeat.
 3. Only after that heartbeat succeeds, the setup window closes and the
    **Presentail Scanner Agent** tray icon appears in the system tray
    (bottom-right corner of the taskbar) with a **green** icon. Click the
    **∧ hidden-icons arrow** if it is not immediately visible.
-4. The agent is now active and will start watching `C:\PresentailScanner\Inbox` for scan files.
+4. The agent is now active and watches the path shown as **Scan inbox** in the
+   tray menu. The setup success message also repeats the monitored path.
 
 > **If the setup window is hidden:** Launch **Presentail Scanner Agent** from the Start menu. If it is already running, find the tray icon. If the server rejected the credential, right-click → **Re-pair station…**, wait for the setup window, then use a freshly generated code.
 >
@@ -178,14 +184,15 @@ The Presentail Scanner Agent setup window opens automatically.
 
 1. Place a real invoice (or a test document labelled "TEST") in the ADF.
 2. Press the physical Scan button (or open HP Scan and click **Invoice to Presentail**).
-3. The scanner feeds the document and saves a PDF to `C:\PresentailScanner\Inbox\`.
+3. The scanner feeds the document and saves a PDF to `C:\Users\Presentail\Desktop\INBOX\`.
 
 ### 5.2  Confirm upload in Presentail OS
 
 1. Within approximately **15 seconds**, open **Presentail OS → Recent Imports**.
 2. The invoice should appear with status **Pending Review** or **Processed**.
 3. Confirm:
-   - File moved from `C:\PresentailScanner\Inbox\` to `C:\PresentailScanner\Uploaded\`.
+   - File moved from `C:\Users\Presentail\Desktop\INBOX\` to
+     `C:\Users\Presentail\Desktop\Uploaded\`.
    - Tray icon shows **green** (connected).
     - The station's **Last seen** time updates in **Settings → Devices → Invoice Scanners**.
 4. Restart the agent from the Start menu and confirm the tray returns to green and **Last seen** updates again. This verifies the new credential was saved in Windows Credential Manager.
@@ -199,8 +206,12 @@ The Presentail Scanner Agent setup window opens automatically.
 | Tray says **Station disabled** | The station is disabled in Presentail OS | Enable the station, generate a fresh code, and re-pair |
 | Tray says **Setup required — select an active entity** | Default entity is missing or inactive | Edit the station, select an active default entity, generate a fresh code, and re-pair |
 | Setup shows a pairing result category and reference ID | Pairing, storage, first-heartbeat, or network validation failed | Copy the category and reference ID into the acceptance record; never copy the pairing code or credential |
-| File stays in `Inbox\` | Agent not running | Check system tray; launch from Start Menu if needed |
-| File in `Failed\` | Permanent file/upload error | Check the matching `.error.json` sidecar. Credential, disabled-station, and entity-configuration failures remain queued instead of moving the scan to `Failed\` |
+| File stays in the HP Scan destination | Agent not running or watching a different folder | Check the system tray's **Scan inbox** line; it must exactly match HP Scan. Launch from Start Menu or re-pair with the corrected path |
+| Agent logs `file detected` but not `file stable, enqueuing` | HP Scan is still writing, the file disappeared, or stability checks cannot read it | Wait for HP Scan to finish. Confirm the PDF remains in Inbox and inspect the watcher warning/error in the logs |
+| Agent logs `file stable, enqueuing`, and file remains in Inbox | The scan is safely queued but has not been accepted | Check the tray queued count and the next upload result. Network/server failures retry automatically |
+| Server returns `duplicate` | The same PDF bytes were already imported | The file moves to `Uploaded`; no second AI Invoice row is created |
+| Server returns `success` with an import ID | Presentail OS accepted and created the import | The file moves to `Uploaded`; find the matching import ID and entity row at `/ai-invoice-import` |
+| File in `Failed\` | Permanent file/upload error | Check the matching `.error.json` sidecar for the status and actionable reason. Credential, disabled-station, entity-configuration, and recoverable network failures remain queued instead of moving the scan to `Failed\` |
 
 The agent only watches files saved into the Inbox. It does not operate the HP
 scanner, install drivers, or choose HP Scan settings.
@@ -234,7 +245,9 @@ Clicking the notification downloads the update in the background. The update is 
 1. Push `scanner-agent-v<version>` to run the Windows release workflow.
 2. Download and retain the workflow artifact containing the versioned `.exe`,
    `latest.yml`, `SHA256SUMS.txt`, and `RELEASE-METADATA.json`.
-3. The tag workflow publishes the same files to the durable GitHub Release.
+3. The tag workflow verifies the packaged `app.asar` exactly matches the
+   current compiled source and contains the configurable-inbox markers, then
+   publishes the same files to the durable GitHub Release and rolling channel.
 4. Configure Presentail OS with the release URL, exact filename, version, and
    SHA-256 from `RELEASE-METADATA.json`.
 5. Complete the clean-PC install, restart, pair, heartbeat, and test-PDF checks
