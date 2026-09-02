@@ -29,7 +29,7 @@ test("drains every old heartbeat and ignores late 401 callbacks", async () => {
   const base = {
     serverUrl: "https://os.example.test",
     token: "not-a-real-token",
-    agentVersion: "1.0.2",
+    agentVersion: "1.0.3",
     onStationDisabled: () => undefined,
     onConfigurationRequired: () => undefined,
   };
