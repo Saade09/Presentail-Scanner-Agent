@@ -4,15 +4,16 @@
 **PC Hostname:** ___________________  
 **Date:** ___________________  
 **Tester:** ___________________  
-**Agent version:** `1.0.2`
-**Installer filename:** `Presentail-Scanner-Agent-1.0.2-x64.exe`
-**SHA-256 (from RELEASE-METADATA.json):** `PENDING WINDOWS BUILD`
+**Agent version:** `1.0.3`
+**Installer filename:** `Presentail-Scanner-Agent-1.0.3-x64.exe`
+**SHA-256 (from RELEASE-METADATA.json):** ________________________________
+**Source bundle SHA-256 (from RELEASE-METADATA.json):** ________________________________
 
-> **Installer artifact: PENDING WINDOWS BUILD** — Linux cannot cross-compile
-> the native keytar and better-sqlite3 modules. Do not set Download Ready to
-> YES until Windows CI publishes the installer, manifest, metadata, and
-> checksum. **Physical commissioning: MISSING** until that exact downloaded
-> installer passes the HQ 2 checks below.
+> **Installer artifact: READY only after Windows CI built, installed, smoke-tested,
+> and published the versioned x64 NSIS installer, update manifest, release
+> metadata, installer checksum, and source-bundle checksum from one immutable
+> tag. **Physical commissioning:
+> MISSING** until that exact downloaded installer passes the HQ 2 checks below.
 
 ---
 
@@ -47,7 +48,7 @@ Mark each item `[x]` when passed, or record the failure notes in the **Notes** c
 | P3 | Sides set to duplex (both sides) | ⚠ Requires physical validation | `[ ]` | |
 | P4 | Resolution set to 300 DPI | ⚠ Requires physical validation | `[ ]` | |
 | P5 | Output format is multi-page PDF | ⚠ Requires physical validation | `[ ]` | |
-| P6 | Destination folder is `C:\PresentailScanner\Inbox` | ⚠ Requires physical validation | `[ ]` | |
+| P6 | HP Scan destination is `C:\Users\Presentail\Desktop\INBOX` and the same path is entered in agent setup | ⚠ Requires physical validation | `[ ]` | |
 | P7 | No filename prompt; no preview; no open-after-save | ⚠ Requires physical validation | `[ ]` | |
 | P8 | Blank-page removal enabled | ⚠ Requires physical validation | `[ ]` | |
 | P9 | Auto orientation / deskew enabled | ⚠ Requires physical validation | `[ ]` | |
@@ -61,7 +62,7 @@ Mark each item `[x]` when passed, or record the failure notes in the **Notes** c
 |---|------|-----------------|------|-------|
 | A1 | Installer runs without UAC elevation (per-user install) | ⚠ Requires physical validation | `[ ]` | |
 | A2 | Agent installed to `%LOCALAPPDATA%\PresentailScannerAgent\` | ⚠ Requires physical validation | `[ ]` | |
-| A3 | `C:\PresentailScanner\Inbox`, `Uploaded`, `Failed` directories created | ⚠ Requires physical validation | `[ ]` | |
+| A3 | Configured inbox plus sibling `Uploaded` and `Failed` directories are created; missing settings still default to `C:\PresentailScanner\Inbox` | Automated + physical validation | `[ ]` | |
 | A4 | Start Menu shortcut created | ⚠ Requires physical validation | `[ ]` | |
 | A5 | Agent setup window opens automatically after install | ⚠ Requires physical validation | `[ ]` | |
 | A6 | Pairing code generated in Presentail OS → Settings → Devices → Invoice Scanners | ⚠ Requires physical validation | `[ ]` | |
@@ -147,10 +148,25 @@ Never paste a pairing code, credential, token hash, or Authorization header.
 | CREDENTIAL STORAGE RESULT | Save/readback/restart logs with HQ 2 station ID and `credentialExists: true` | `PENDING PHYSICAL TEST` |
 | HEARTBEAT RESULT | First heartbeat 2xx plus OS last-seen/version/queue count | `PENDING PHYSICAL TEST` |
 | RACE CONDITION FOUND | Old-generation late 401 regression and physical result | `YES IN CODE; PENDING PHYSICAL CONFIRMATION` |
-| FIXED VERSION | Tray, startup log, heartbeat, and installer properties agree | `1.0.2` |
-| INSTALLER FILENAME | Versioned x64 NSIS filename | `Presentail-Scanner-Agent-1.0.2-x64.exe` |
-| DOWNLOAD READY | Published URL, filename, version, and checksum agree | `NO — PENDING WINDOWS BUILD` |
+| FIXED VERSION | Tray, startup log, heartbeat, and installer properties agree | `1.0.3` |
+| ACTIVE INBOX | Tray and watcher-ready log show the configured destination | `PENDING — C:\Users\Presentail\Desktop\INBOX` |
+| INSTALLER FILENAME | Versioned x64 NSIS filename | `Presentail-Scanner-Agent-1.0.3-x64.exe` |
+| RELEASE PROVENANCE | Source commit, source-bundle checksum, and configurable-inbox capabilities in release metadata | `PENDING RELEASE WORKFLOW` |
+| DOWNLOAD READY | Production URL, filename, version, checksum, immutable release, and rolling feed agree | `PENDING RELEASE WORKFLOW` |
 | PACKAGED WINDOWS PAIRING TEST | Fresh code, first heartbeat, restart persistence, HQ 2 Connected | `FAIL — NOT YET RUN` |
+
+### Required fresh-PDF ingestion evidence
+
+Use one new PDF that has never been uploaded before. Record no invoice contents,
+credentials, pairing codes, or authorization headers.
+
+| Stage | Secret-safe evidence | Result |
+|---|---|---|
+| DETECTED | Watcher `file detected` and `file stable, enqueuing` timestamps plus filename | `PENDING PHYSICAL TEST` |
+| QUEUED | Queue entry ID/count before upload; file still present in Inbox | `PENDING PHYSICAL TEST` |
+| SERVER ACCEPTED | HTTP status/result, correlation ID, and returned import ID | `PENDING PHYSICAL TEST` |
+| FILE MOVED | Inbox absent and sibling Uploaded contains timestamped filename after acceptance | `PENDING PHYSICAL TEST` |
+| OS ROW | Import ID, station entity, status, and visible row timestamp at `/ai-invoice-import` | `PENDING PHYSICAL TEST` |
 
 ---
 
@@ -171,7 +187,7 @@ Never paste a pairing code, credential, token hash, or Authorization header.
 |---|------|-----------------|------|-------|
 | E1 | Adnan places a real vendor invoice (multi-page, double-sided) in the ADF and presses the physical Scan button | ⚠ Requires physical validation | `[ ]` | |
 | E2 | The invoice uploads and appears in Presentail OS → Recent Imports within 15 seconds | ⚠ Requires physical validation | `[ ]` | |
-| E3 | File moved from `Inbox\` to `Uploaded\` on the scanner PC | ⚠ Requires physical validation | `[ ]` | |
+| E3 | Test PDF moves from `C:\Users\Presentail\Desktop\INBOX\` to sibling `Uploaded\` on the scanner PC | ⚠ Requires physical validation | `[ ]` | |
 | E4 | AI extraction results are reviewed and approved in Presentail OS | ⚠ Requires physical validation | `[ ]` | |
 | E5 | Adnan confirms the end-to-end flow meets operational requirements | ⚠ Requires physical validation | `[ ]` | |
 
