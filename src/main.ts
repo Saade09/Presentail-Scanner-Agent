@@ -19,7 +19,7 @@ import {
   clearPairingState,
   type PairingRecord,
 } from "./lib/credential.js";
-import { closeQueue } from "./lib/queue.js";
+import { closeQueue, getCount } from "./lib/queue.js";
 import { startWatcher, stopWatcher } from "./lib/watcher.js";
 import { startRetryScheduler, stopRetryScheduler } from "./lib/retryScheduler.js";
 import {
@@ -30,14 +30,21 @@ import {
 import { createTray, updateTrayState, destroyTray } from "./lib/tray.js";
 import { enableAutoStart } from "./lib/autostart.js";
 import { ensureScannerDirs } from "./lib/fileOps.js";
+import {
+  DEFAULT_INBOX_DIR,
+  loadInboxDir,
+  normalizeInboxDir,
+  saveInboxDir,
+} from "./lib/inboxSettings.js";
 import type { TrayState } from "./lib/retryScheduler.js";
 import { runPairingReset } from "./lib/pairingReset.js";
 import { PairingAttemptLock } from "./lib/pairingAttemptLock.js";
+import { ServiceStateGate } from "./lib/serviceStateGate.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 export const AGENT_VERSION = app.getVersion();
-const SCANNER_ROOT = "C:\\PresentailScanner";
+const INBOX_SETTINGS_FILE = "settings.json";
 const PACKAGED_RUNTIME_CHECK = process.argv.includes("--verify-packaged-runtime");
 const FIRST_RUN_SMOKE_TEST = process.argv.includes("--smoke-test-first-run");
 const LOCAL_APP_DATA =
@@ -117,6 +124,27 @@ let trayInitialized = false;
 let rePairResetPromise: Promise<boolean> | null = null;
 let pairingStatePrepared = false;
 const pairingAttemptLock = new PairingAttemptLock();
+const serviceStateGate = new ServiceStateGate((state) => updateTrayState(state));
+
+function getInboxSettingsPath(): string {
+  return path.join(app.getPath("userData"), INBOX_SETTINGS_FILE);
+}
+
+function getConfiguredInboxDir(): string {
+  return loadInboxDir(getInboxSettingsPath());
+}
+
+function createTrayOptions(state: AgentState, inboxDir: string) {
+  return {
+    stationName: state.stationName,
+    entityName: state.entityName,
+    agentVersion: AGENT_VERSION,
+    inboxDir,
+    onRePair: handleRePair,
+    onOpenSetup: openSetupWindow,
+    onQuit: () => app.quit(),
+  };
+}
 
 function normalizeServerUrl(input: string): string {
   const parsed = new URL(input);
@@ -161,7 +189,7 @@ function openSetupWindow(): void {
 
   setupWindow = new BrowserWindow({
     width: 480,
-    height: 540,
+    height: 650,
     resizable: false,
     title: "Presentail Scanner Agent — Setup",
     autoHideMenuBar: true,
@@ -197,11 +225,15 @@ function openSetupWindow(): void {
 
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 
+ipcMain.handle("scanner:get-settings", () => ({
+  inboxDir: getConfiguredInboxDir(),
+}));
+
 ipcMain.handle(
   "scanner:pair",
   async (
     _event,
-    payload: { serverUrl: string; pairingCode: string }
+    payload: { serverUrl: string; pairingCode: string; inboxDir?: string }
   ) => {
     const { serverUrl, pairingCode } = payload;
     const releasePairingAttempt = pairingAttemptLock.acquire();
@@ -222,8 +254,29 @@ ipcMain.handle(
         error: "Enter a valid Presentail OS URL without credentials, query parameters, or fragments.",
       };
     }
+    let inboxDir: string;
+    try {
+      inboxDir = normalizeInboxDir(payload.inboxDir ?? DEFAULT_INBOX_DIR);
+      ensureScannerDirs(inboxDir);
+      saveInboxDir(getInboxSettingsPath(), inboxDir);
+    } catch (err) {
+      releasePairingAttempt();
+      logger.error("IPC: scan inbox setup failed", {
+        inboxDir: payload.inboxDir,
+        error: String(err),
+      });
+      return {
+        success: false,
+        category: "inbox_error",
+        error:
+          err instanceof Error
+            ? err.message
+            : "The scan inbox could not be prepared. Check the path and Windows folder permissions.",
+      };
+    }
     logger.info("IPC: pairing initiated", {
       endpoint: `${normalizedServerUrl}/api/scanner/pair`,
+      inboxDir,
     });
 
     try {
@@ -439,13 +492,14 @@ ipcMain.handle(
         isCredentialRevoked: false,
       };
 
-      startAgentServices(agentState, true);
+       startAgentServices(agentState, true, inboxDir);
       setupWindow?.close();
 
       return {
         success: true,
         category: "accepted",
         correlationId: verifiedRecord.correlationId,
+          inboxDir,
       };
     } catch (err) {
       logger.error("IPC: pairing error", { error: String(err) });
@@ -472,7 +526,7 @@ ipcMain.handle(
 // ── Agent services ────────────────────────────────────────────────────────────
 
 function onStateChange(state: TrayState): void {
-  updateTrayState(state);
+  serviceStateGate.publish(state);
 }
 
 function onCredentialRevoked(): void {
@@ -501,17 +555,41 @@ async function stopAgentServices(): Promise<void> {
 function startAgentServices(
   state: AgentState,
   initialHeartbeatAuthenticated = false,
+  configuredInboxDir = getConfiguredInboxDir(),
 ): void {
-  const { inbox, uploaded, failed } = ensureScannerDirs(SCANNER_ROOT);
+  serviceStateGate.reset();
+  let inbox: string;
+  let uploaded: string;
+  let failed: string;
+  try {
+    const dirs = ensureScannerDirs(configuredInboxDir);
+    inbox = dirs.inbox;
+    uploaded = dirs.uploaded;
+    failed = dirs.failed;
+  } catch (err) {
+    logger.error("Agent services could not prepare scan inbox", {
+      inboxDir: configuredInboxDir,
+      error: String(err),
+    });
+    startupLog("inbox-initialization-failure", {
+      inbox: configuredInboxDir,
+      error: String(err),
+    });
+    createTray({
+      stationName: state.stationName,
+      entityName: state.entityName,
+      agentVersion: AGENT_VERSION,
+      inboxDir: configuredInboxDir,
+      onRePair: handleRePair,
+      onOpenSetup: openSetupWindow,
+      onQuit: () => app.quit(),
+    });
+    trayInitialized = true;
+    serviceStateGate.markInboxError();
+    return;
+  }
 
-  createTray({
-    stationName: state.stationName,
-    entityName: state.entityName,
-    agentVersion: AGENT_VERSION,
-    onRePair: handleRePair,
-    onOpenSetup: openSetupWindow,
-    onQuit: () => app.quit(),
-  });
+  createTray(createTrayOptions(state, inbox));
   trayInitialized = true;
   startupLog("tray-initialized", { state: "paired" });
   writeFirstRunSmokeResult();
@@ -520,6 +598,7 @@ function startAgentServices(
     serverUrl: state.serverUrl,
     token: state.token,
     agentVersion: AGENT_VERSION,
+    inboxDir: inbox,
     uploadedDir: uploaded,
     failedDir: failed,
     onStateChange,
@@ -538,15 +617,38 @@ function startAgentServices(
     onConfigurationRequired,
   });
 
-  startWatcher({ inboxDir: inbox });
+  startWatcher({
+    inboxDir: inbox,
+    onReady: () => {
+      if (agentState !== state || state.isCredentialRevoked) return;
+      serviceStateGate.markReady(
+        getCount() > 0
+          ? "offline"
+          : initialHeartbeatAuthenticated
+            ? "connected"
+            : undefined,
+      );
+      startupLog("watcher-ready", { inbox });
+    },
+    onError: (error) => {
+      logger.error("Watcher could not monitor configured inbox", {
+        inboxDir: inbox,
+        error: String(error),
+      });
+      startupLog("watcher-error", { inbox, error: String(error) });
+      serviceStateGate.markInboxError();
+      void stopWatcher();
+    },
+  });
   startupLog("watcher-initialized", { inbox });
 
-  if (initialHeartbeatAuthenticated) {
-    updateTrayState("connected");
-  }
+  // The watcher ready callback publishes the initial connected/offline state.
   logger.info("Agent services started", {
     stationId: state.stationId,
     stationName: state.stationName,
+    inboxDir: inbox,
+    uploadedDir: uploaded,
+    failedDir: failed,
     version: AGENT_VERSION,
     correlationId: state.correlationId,
   });
@@ -827,6 +929,7 @@ app.on("ready", async () => {
         stationName: savedPairing.station.name,
         entityName: savedPairing.station.defaultEntityName,
         agentVersion: AGENT_VERSION,
+        inboxDir: getConfiguredInboxDir(),
         onRePair: handleRePair,
         onOpenSetup: openSetupWindow,
         onQuit: () => app.quit(),
@@ -871,6 +974,7 @@ app.on("ready", async () => {
       stationName: "Not paired",
       entityName: "",
       agentVersion: AGENT_VERSION,
+      inboxDir: getConfiguredInboxDir(),
       onRePair: handleRePair,
       onOpenSetup: openSetupWindow,
       onQuit: () => app.quit(),
