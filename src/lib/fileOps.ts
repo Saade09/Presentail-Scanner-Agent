@@ -40,17 +40,41 @@ export function moveFile(src: string, dest: string): void {
   }
 }
 
-/**
- * Ensure the three standard subdirectories exist under the scanner root.
- */
-export function ensureScannerDirs(root: string): {
+export interface ScannerDirs {
   inbox: string;
   uploaded: string;
   failed: string;
-} {
-  const inbox    = path.join(root, "Inbox");
-  const uploaded = path.join(root, "Uploaded");
-  const failed   = path.join(root, "Failed");
+}
+
+/**
+ * The inbox, Uploaded, and Failed folders are siblings. This preserves the
+ * original C:\PresentailScanner\{Inbox,Uploaded,Failed} layout while allowing
+ * HP Scan to use a different inbox such as a Desktop folder.
+ */
+export function getScannerDirs(inboxDir: string): ScannerDirs {
+  const windowsPath =
+    /^[A-Za-z]:[\\/]/.test(inboxDir) ||
+    /^\\\\[^\\]+\\[^\\]+(?:\\|$)/.test(inboxDir);
+  const pathApi = windowsPath ? path.win32 : path;
+  const inbox = inboxDir;
+  const parent = pathApi.dirname(inboxDir);
+  const dirs = {
+    inbox,
+    uploaded: pathApi.join(parent, "Uploaded"),
+    failed: pathApi.join(parent, "Failed"),
+  };
+  const comparisonKey = (value: string) =>
+    windowsPath ? path.win32.normalize(value).toLowerCase() : path.resolve(value);
+  if (new Set(Object.values(dirs).map(comparisonKey)).size !== 3) {
+    throw new Error(
+      "Inbox, Uploaded, and Failed must resolve to three different folders.",
+    );
+  }
+  return dirs;
+}
+
+export function ensureScannerDirs(inboxDir: string): ScannerDirs {
+  const { inbox, uploaded, failed } = getScannerDirs(inboxDir);
 
   for (const dir of [inbox, uploaded, failed]) {
     fs.mkdirSync(dir, { recursive: true });
