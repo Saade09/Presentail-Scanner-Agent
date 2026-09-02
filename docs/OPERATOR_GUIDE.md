@@ -16,8 +16,9 @@
 
 ## Scanning an Invoice
 
-The Presentail Scanner Agent does not control the scanner. It watches for files
-that HP Scan or other scanner software saves to `C:\PresentailScanner\Inbox`.
+The Presentail Scanner Agent does not control the scanner. It watches the folder
+shown as **Scan inbox** when you right-click the tray icon. On the commissioned
+PC this must be `C:\Users\Presentail\Desktop\INBOX`, matching HP Scan exactly.
 
 1. **Place the invoice** in the ADF (the tray at the top of the scanner), face-down, top edge first
 2. **Press the Scan button** on the scanner panel  
@@ -49,6 +50,7 @@ The Presentail Scanner Agent icon lives in the system tray — bottom-right corn
 | 🔴 **Red — Credential rejected** | Presentail OS rejected this device credential; agent paused | Ask a manager to generate a fresh code, then right-click → **Re-pair station…** |
 | 🔴 **Red — Station disabled** | The station is disabled in Presentail OS | Ask a manager to enable it, generate a fresh code, then re-pair |
 | 🔴 **Red — Setup required** | The default entity is missing or inactive | Ask a manager to select an active default entity, generate a fresh code, then re-pair |
+| 🔴 **Red — Inbox unavailable** | The configured scan folder cannot be created or watched | Check the **Scan inbox** path and Windows folder permissions, then reopen settings |
 | No icon | Agent not running | Launch from Start Menu → Presentail Scanner Agent |
 
 ---
@@ -75,8 +77,9 @@ Read the full status line before acting:
 
 1. Check the tray icon — if blue, wait for the current upload to finish
 2. If the icon is green but the invoice is missing, check **Presentail OS → Recent Imports** and refresh
-3. If the file is in `C:\PresentailScanner\Uploaded\`, refresh **Recent Imports**
-4. If the file is in `C:\PresentailScanner\Failed\`, open the matching `.error.json` file for the reason. Ask a manager to confirm the station has an active default entity, then re-pair if instructed. Do **not** delete the failed scan.
+3. Right-click the tray icon and confirm **Scan inbox** exactly matches the HP Scan destination. A green icon cannot detect files saved to a different folder.
+4. If the file is in the `Uploaded` folder beside the configured inbox, refresh **Recent Imports**
+5. If the file is in the sibling `Failed` folder, open the matching `.error.json` file for the reason. Ask a manager to confirm the station has an active default entity, then re-pair if instructed. Do **not** delete the failed scan.
 
 ### Agent setup window is missing
 
@@ -100,7 +103,7 @@ No action needed. The system detects duplicate scans automatically (using a SHA-
 
 - ❌ Do not scan multiple invoices in one batch — scan one invoice at a time
 - ❌ Do not restart or shut down the PC while the tray icon is blue (uploading)
-- ❌ Do not manually move or delete files from `C:\PresentailScanner\Inbox\`
+- ❌ Do not manually move or delete files from the **Scan inbox** folder shown in the tray
 - ❌ Do not unplug the scanner USB cable while scanning
 
 ---
