@@ -13,6 +13,7 @@ const ICON_FILES: Record<TrayState, string> = {
   error:     "icon-error.png",
   disabled:  "icon-error.png",
   configuration: "icon-error.png",
+  "inbox-error": "icon-error.png",
   unpaired:  "icon-error.png",
 };
 
@@ -20,6 +21,7 @@ interface TrayOptions {
   stationName: string;
   entityName: string;
   agentVersion: string;
+  inboxDir: string;
   onRePair: () => void;
   onOpenSetup: () => void;
   onQuit: () => void;
@@ -78,7 +80,15 @@ export function destroyTray(): void {
 function refreshTray(): void {
   if (!tray || !trayOpts) return;
 
-  const { stationName, entityName, agentVersion, onRePair, onOpenSetup, onQuit } = trayOpts;
+  const {
+    stationName,
+    entityName,
+    agentVersion,
+    inboxDir,
+    onRePair,
+    onOpenSetup,
+    onQuit,
+  } = trayOpts;
   const queuedCount = getCount();
 
   // Update icon
@@ -96,6 +106,7 @@ function refreshTray(): void {
     error:     "Credential rejected — re-pair required",
     disabled:  "Station disabled — enable in Presentail OS",
     configuration: "Setup required — select an active entity",
+    "inbox-error": "Inbox unavailable — check scan folder",
     unpaired:  "Not paired",
   };
   const stateGuidance: Record<TrayState, string> = {
@@ -105,6 +116,7 @@ function refreshTray(): void {
     error: "Presentail OS rejected this device credential. Generate a fresh code in Presentail OS and choose Re-pair station…",
     disabled: "This station is disabled in Presentail OS. Enable it, generate a fresh code, and choose Re-pair station…",
     configuration: "This station needs an active default entity. Fix it in Presentail OS, generate a fresh code, and choose Re-pair station…",
+    "inbox-error": "The scan folder could not be created or watched. Check the path and Windows folder permissions, then reopen settings.",
     unpaired: "Generate a fresh pairing code in Presentail OS, then choose Open pairing / settings…",
   };
 
@@ -113,6 +125,7 @@ function refreshTray(): void {
     `Station: ${stationName || "unknown"}`,
     `Entity: ${entityName || "—"}`,
     `Version: ${agentVersion}`,
+    `Scan inbox: ${inboxDir}`,
     `Status: ${stateLabel[currentState]}`,
     `Action: ${stateGuidance[currentState]}`,
     queuedCount > 0 ? `Queued: ${queuedCount}` : "",
@@ -140,6 +153,10 @@ function refreshTray(): void {
     },
     {
       label: `Version: ${agentVersion}`,
+      enabled: false,
+    },
+    {
+      label: `Scan inbox: ${inboxDir}`,
       enabled: false,
     },
     {
