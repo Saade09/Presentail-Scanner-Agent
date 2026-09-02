@@ -7,7 +7,7 @@
     "dev": "tsc --noEmit && electron .",
     "build": "tsc",
     "dist": "pnpm run dist:win",
-    "dist:win": "pnpm run build && electron-builder --win nsis --x64 --publish never",
+    "dist:win": "pnpm test && electron-builder --win nsis --x64 --publish never",
     "verify-version": "node scripts/verify-version.mjs",
     "verify-release": "node scripts/verify-release.mjs",
     "typecheck": "tsc --noEmit",
@@ -59,7 +59,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.ico",
@@ -75,7 +77,9 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Presentail Scanner Agent",
       "runAfterFinish": true,
-      "installerLanguages": ["en_US"],
+      "installerLanguages": [
+        "en_US"
+      ],
       "include": "installer/custom-nsis.nsh"
     },
     "publish": {
