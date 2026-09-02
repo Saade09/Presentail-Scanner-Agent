@@ -11,6 +11,8 @@ const WATCHED_EXTENSIONS = new Set([".pdf", ".jpg", ".jpeg", ".png"]);
 
 export interface WatcherOptions {
   inboxDir: string;
+  onError?: (error: Error) => void;
+  onReady?: () => void;
 }
 
 let watcher: FSWatcher | null = null;
@@ -23,7 +25,7 @@ const activeStableTasks = new Set<Promise<void>>();
  * once stable, they are hashed, enqueued, and an immediate upload is attempted.
  */
 export function startWatcher(options: WatcherOptions): void {
-  const { inboxDir } = options;
+  const { inboxDir, onError, onReady } = options;
 
   logger.info("Watcher: starting", { inboxDir });
 
@@ -69,10 +71,12 @@ export function startWatcher(options: WatcherOptions): void {
 
   watcher.on("error", (err) => {
     logger.error("Watcher: chokidar error", { error: String(err) });
+    onError?.(err instanceof Error ? err : new Error(String(err)));
   });
 
   watcher.on("ready", () => {
     logger.info("Watcher: ready — monitoring inbox", { inboxDir });
+    onReady?.();
   });
 }
 
