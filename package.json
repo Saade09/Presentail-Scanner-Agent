@@ -1,6 +1,6 @@
 {
   "name": "@workspace/scanner-agent",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Presentail Scanner Agent — Windows tray application for scan file upload",
   "main": "dist/main.js",
   "scripts": {
