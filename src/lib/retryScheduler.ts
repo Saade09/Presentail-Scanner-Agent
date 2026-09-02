@@ -23,12 +23,14 @@ export type TrayState =
   | "error"
   | "disabled"
   | "configuration"
+  | "inbox-error"
   | "unpaired";
 
 interface SchedulerOptions {
   serverUrl: string;
   token: string;
   agentVersion: string;
+  inboxDir: string;
   uploadedDir: string;
   failedDir: string;
   onStateChange: TrayStateCallback;
@@ -163,6 +165,7 @@ async function doUpload(
     serverUrl,
     token,
     agentVersion,
+    inboxDir,
     uploadedDir,
     failedDir,
     onStateChange,
@@ -170,6 +173,12 @@ async function doUpload(
     onStationDisabled,
     onConfigurationRequired,
   } = options;
+
+  logger.debug("RetryScheduler: processing with configured inbox", {
+    inboxDir,
+    uploadedDir,
+    failedDir,
+  });
 
   // Skip if file no longer exists
   if (!fs.existsSync(task.filePath)) {
