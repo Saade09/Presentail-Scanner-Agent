@@ -42,7 +42,7 @@ const provenanceFiles = {
   "renderer/setup/setup.js": [
     "window.scanner.getSettings()",
     "inboxDir",
-    "HP Scan destination",
+    "Enter an absolute Windows scan folder",
   ],
 };
 
