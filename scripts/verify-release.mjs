@@ -10,6 +10,41 @@ const pkg = JSON.parse(readFileSync(join(agentDir, "package.json"), "utf8"));
 const expectedName = `Presentail-Scanner-Agent-${pkg.version}-x64.exe`;
 const installerPath = join(releaseDir, expectedName);
 const manifestPath = join(releaseDir, "latest.yml");
+const asarPath = join(releaseDir, "win-unpacked", "resources", "app.asar");
+
+const provenanceFiles = {
+  "dist/main.js": [
+    "scanner:get-settings",
+    "inboxSettings_js_1.normalizeInboxDir)(payload.inboxDir ?? inboxSettings_js_1.DEFAULT_INBOX_DIR)",
+    "startAgentServices(agentState, true, inboxDir)",
+    "watcher_js_1.startWatcher)({",
+    "inboxDir: inbox",
+  ],
+  "dist/lib/inboxSettings.js": [
+    "Scan inbox path is required.",
+    "SETTINGS_SCHEMA_VERSION = 1",
+    "Could not save the scan inbox setting",
+  ],
+  "dist/lib/watcher.js": [
+    "const { inboxDir, onError, onReady } = options",
+    "chokidar_1.default.watch(inboxDir",
+  ],
+  "dist/lib/retryScheduler.js": [
+    "inboxDir,",
+    "uploadedDir,",
+    "failedDir,",
+    "Upload complete",
+  ],
+  "dist/lib/tray.js": [
+    "Scan inbox:",
+    "Version:",
+  ],
+  "renderer/setup/setup.js": [
+    "window.scanner.getSettings()",
+    "inboxDir",
+    "HP Scan destination",
+  ],
+};
 
 function requirePath(path, description) {
   if (!existsSync(path)) throw new Error(`${description} is missing: ${path}`);
@@ -48,6 +83,71 @@ function isPeX64(path) {
   }
 }
 
+function readAsarHeader(archivePath) {
+  const archive = readFileSync(archivePath);
+  if (archive.length < 16) throw new Error(`ASAR archive is too small: ${archivePath}`);
+
+  const headerSize = archive.readUInt32LE(4);
+  const headerStart = 8;
+  const headerEnd = headerStart + headerSize;
+  if (headerSize < 8 || headerEnd > archive.length) {
+    throw new Error(`ASAR archive has an invalid header size: ${archivePath}`);
+  }
+
+  const jsonLength = archive.readUInt32LE(headerStart + 4);
+  const jsonStart = headerStart + 8;
+  const jsonEnd = jsonStart + jsonLength;
+  if (jsonEnd > headerEnd) {
+    throw new Error(`ASAR archive has an invalid JSON header: ${archivePath}`);
+  }
+
+  return {
+    archive,
+    header: JSON.parse(archive.toString("utf8", jsonStart, jsonEnd)),
+    contentOffset: headerEnd,
+  };
+}
+
+function readAsarFile(asar, filename) {
+  const parts = filename.split("/");
+  let node = asar.header;
+  for (const part of parts) {
+    node = node?.files?.[part];
+    if (!node) throw new Error(`Packaged application is missing ${filename}`);
+  }
+  if (node.unpacked) {
+    return readFileSync(join(`${asarPath}.unpacked`, ...parts));
+  }
+  const offset = asar.contentOffset + Number.parseInt(node.offset, 10);
+  return asar.archive.subarray(offset, offset + node.size);
+}
+
+function verifyCurrentSourceWasPackaged() {
+  const asar = readAsarHeader(asarPath);
+  const bundleHash = createHash("sha256");
+
+  for (const [filename, markers] of Object.entries(provenanceFiles)) {
+    const packaged = readAsarFile(asar, filename);
+    const current = readFileSync(join(agentDir, filename));
+    if (!packaged.equals(current)) {
+      throw new Error(
+        `Packaged ${filename} does not match the current Scanner Agent build output`,
+      );
+    }
+    const text = packaged.toString("utf8");
+    for (const marker of markers) {
+      if (!text.includes(marker)) {
+        throw new Error(`Packaged ${filename} is missing custom-inbox marker: ${marker}`);
+      }
+    }
+    bundleHash.update(filename);
+    bundleHash.update("\0");
+    bundleHash.update(packaged);
+  }
+
+  return bundleHash.digest("hex");
+}
+
 requirePath(installerPath, "Versioned x64 NSIS installer");
 requirePath(manifestPath, "electron-updater manifest");
 if (statSync(installerPath).size < 1_000_000) {
@@ -55,7 +155,7 @@ if (statSync(installerPath).size < 1_000_000) {
 }
 
 const unpacked = join(releaseDir, "win-unpacked", "resources");
-requirePath(join(unpacked, "app.asar"), "Packaged Electron application");
+requirePath(asarPath, "Packaged Electron application");
 requirePath(
   join(unpacked, "app.asar.unpacked", "node_modules", "keytar"),
   "Packaged keytar native dependency",
@@ -78,6 +178,8 @@ for (const packageName of ["keytar", "better-sqlite3"]) {
   }
 }
 
+const sourceBundleSha256 = verifyCurrentSourceWasPackaged();
+
 const sha256 = createHash("sha256")
   .update(readFileSync(installerPath))
   .digest("hex");
@@ -90,6 +192,9 @@ writeFileSync(
       arch: "x64",
       installer: expectedName,
       sha256,
+      sourceBundleSha256,
+      sourceCommit: process.env.GITHUB_SHA || null,
+      capabilities: ["configurable-inbox", "custom-inbox-watcher", "sibling-uploaded-failed"],
       updateManifest: "latest.yml",
       downloadUrl:
         `https://github.com/Saade09/Presentail-Scanner-Agent/releases/download/` +
