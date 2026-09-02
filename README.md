@@ -1,6 +1,6 @@
 # Presentail Scanner Agent
 
-A lightweight Windows tray application that watches `C:\PresentailScanner\Inbox`, detects completed scan files (PDF, JPG, JPEG, PNG), and uploads them to Presentail OS via the scanner upload API.
+A lightweight Windows tray application that watches the HP Scan destination configured during setup, detects completed scan files (PDF, JPG, JPEG, PNG), and uploads them to Presentail OS via the scanner upload API. Existing installations default to `C:\PresentailScanner\Inbox`.
 
 ## Architecture
 
@@ -42,6 +42,8 @@ artifacts/scanner-agent/
 
 ## Directory Layout (Windows runtime)
 
+The configured inbox and its `Uploaded` and `Failed` siblings can live anywhere
+on a local Windows drive. The backward-compatible default is:
 ```
 C:\PresentailScanner\
 ├── Inbox\       ← Drop scanned files here; watched by the agent
@@ -50,6 +52,7 @@ C:\PresentailScanner\
 
 %APPDATA%\PresentailScannerAgent\
 ├── queue.db     ← SQLite persistent upload queue
+├── settings.json← Non-secret scan inbox setting, preserved across upgrades
 └── logs\
     └── scanner-agent-YYYY-MM-DD.log   ← JSON structured logs (14-day rotation)
 
@@ -116,7 +119,7 @@ The installer is written to **`release/`**:
 
 ```
 release/
-├── Presentail-Scanner-Agent-1.0.2-x64.exe
+├── Presentail-Scanner-Agent-1.0.3-x64.exe
 ├── latest.yml
 ├── SHA256SUMS.txt
 └── RELEASE-METADATA.json
@@ -131,7 +134,7 @@ release/
 | **Start Menu shortcut** | Always created |
 | **Desktop shortcut** | User is asked during install (optional) |
 | **Launch after install** | Agent launches automatically on first install |
-| **Upgrade** | Preserves `queue.db`, Credential Manager entry, and auto-start Registry key |
+| **Upgrade** | Preserves `queue.db`, `settings.json`, Credential Manager entry, and auto-start Registry key |
 | **Uninstall** | Warns if `Inbox\` or `Failed\` contain files; does **not** delete `C:\PresentailScanner\` |
 
 ---
@@ -209,11 +212,13 @@ internally.
 1. Open **Presentail OS → Settings → Devices → Invoice Scanners**, create a station,
    and click **Generate Pairing Code** (valid 15 min).
 2. Launch the Scanner Agent; the setup window opens automatically if not paired.
-3. Enter the Presentail OS URL and the pairing code.
+3. Enter the Presentail OS URL, pairing code, and the exact destination folder
+   used by the HP Scan preset. For the commissioned workstation this is
+   `C:\Users\Presentail\Desktop\INBOX`.
 4. On success, the agent stores the bearer token in **Windows Credential Manager**,
    registers the auto-start Registry key
    (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`), and begins monitoring
-   `C:\PresentailScanner\Inbox`.
+   the configured scan inbox. The active path is shown in the tray menu and tooltip.
 
 ## Re-pairing
 
@@ -246,8 +251,8 @@ Responses:
 
 - **202** — accepted, newly imported
 - **200 + `duplicate: true`** — already imported (idempotent)
-- **4xx (permanent)** — file moved to `Failed\`
-- **Network / 5xx** — file stays in `Inbox\`, retried with exponential back-off
+- **4xx (permanent)** — file moved to the configured inbox's sibling `Failed\` folder
+- **Network / 5xx** — file stays in the configured inbox, retried with exponential back-off
 
 ## Further Documentation
 
