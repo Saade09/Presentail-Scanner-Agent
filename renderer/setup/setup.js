@@ -8,6 +8,7 @@
   const btnPair     = document.getElementById("btn-pair");
   const inputUrl    = document.getElementById("server-url");
   const inputCode   = document.getElementById("pairing-code");
+  const inputInbox  = document.getElementById("inbox-dir");
   const errorBanner = document.getElementById("error-banner");
   const successBanner = document.getElementById("success-banner");
   const DEFAULT_OS_URL = "https://os.presentail.com";
@@ -16,6 +17,16 @@
   if (!inputUrl.value.trim()) {
     inputUrl.value = DEFAULT_OS_URL;
   }
+
+  window.scanner.getSettings()
+    .then((settings) => {
+      if (settings && typeof settings.inboxDir === "string") {
+        inputInbox.value = settings.inboxDir;
+      }
+    })
+    .catch(() => {
+      // Keep the backward-compatible default already rendered in the field.
+    });
 
   // Auto-uppercase the pairing code field
   inputCode.addEventListener("input", () => {
@@ -37,6 +48,7 @@
     used_code: "Pairing code already used",
     station_disabled: "Station disabled",
     inactive_entity: "Invalid station entity",
+    inbox_error: "Scan folder unavailable",
     secure_storage_failure: "Secure storage failed",
     post_pair_authentication_failure: "Authentication failed after pairing",
     network_api_failure: "Network or API unavailable",
@@ -60,6 +72,7 @@
   function validateInputs() {
     const url  = inputUrl.value.trim();
     const code = inputCode.value.trim();
+    const inboxDir = inputInbox.value.trim();
 
     if (!url) {
       showError("Please enter the Presentail OS URL.");
@@ -92,7 +105,13 @@
       return null;
     }
 
-    return { serverUrl: url, pairingCode: code };
+    if (!/^(?:[A-Za-z]:[\\/]|\\\\)/.test(inboxDir)) {
+      showError("Enter an absolute Windows scan folder, such as C:\\PresentailScanner\\Inbox.");
+      inputInbox.focus();
+      return null;
+    }
+
+    return { serverUrl: url, pairingCode: code, inboxDir };
   }
 
   async function handlePair() {
@@ -109,10 +128,12 @@
       const result = await window.scanner.pair(payload);
 
       if (result.success) {
+        successBanner.textContent = `Paired successfully. The Windows tray agent is monitoring ${result.inboxDir}.`;
         successBanner.style.display = "block";
         btnPair.style.display = "none";
         inputUrl.disabled = true;
         inputCode.disabled = true;
+        inputInbox.disabled = true;
         // Window will be closed by main process after short delay
       } else {
         const label = categoryLabels[result.category] || "Pairing failed";
@@ -132,7 +153,7 @@
   btnPair.addEventListener("click", handlePair);
 
   // Submit on Enter in either field
-  [inputUrl, inputCode].forEach((el) => {
+  [inputUrl, inputCode, inputInbox].forEach((el) => {
     el.addEventListener("keydown", (e) => {
       if (e.key === "Enter") handlePair();
     });
