@@ -1,19 +1,22 @@
-import { Notification } from "electron";
 import { logger } from "./logger.js";
 
 const APP_NAME = "Presentail Scanner";
 
 function notify(title: string, body: string): void {
-  try {
-    if (!Notification.isSupported()) {
-      logger.warn("Notifications not supported on this platform");
-      return;
-    }
-    const n = new Notification({ title, body, silent: false });
-    n.show();
-  } catch (err) {
-    logger.warn("Notification failed", { title, error: String(err) });
-  }
+  if (process.env.NODE_TEST_CONTEXT) return;
+
+  void import("electron")
+    .then(({ Notification }) => {
+      if (!Notification.isSupported()) {
+        logger.warn("Notifications not supported on this platform");
+        return;
+      }
+      const n = new Notification({ title, body, silent: false });
+      n.show();
+    })
+    .catch((err) => {
+      logger.warn("Notification failed", { title, error: String(err) });
+    });
 }
 
 /** File uploaded successfully (202). */
