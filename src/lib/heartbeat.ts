@@ -128,7 +128,7 @@ async function sendHeartbeat(
         },
         timeout: 15_000,
         validateStatus: () => true,
-      }
+      },
     );
 
     logger.info("Heartbeat: sent", {
@@ -195,8 +195,9 @@ async function sendHeartbeat(
     }
 
     if (responseKind === "success") {
-      // Update tray state from heartbeat response
-      onStateChange(queuedCount > 0 ? "offline" : "connected");
+      // Authentication and server reachability are healthy. Queue depth is
+      // displayed separately and must not make a paired station look offline.
+      onStateChange("connected");
     } else {
       onStateChange("offline");
     }

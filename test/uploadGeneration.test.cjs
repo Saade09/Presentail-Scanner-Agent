@@ -38,7 +38,7 @@ test("drains overlapping old uploads and ignores their late 401 callbacks", asyn
     startRetryScheduler({
       serverUrl: "https://os.example.test",
       token: "old-not-a-real-token",
-      agentVersion: "1.0.3",
+      agentVersion: "1.0.4",
       inboxDir: dir,
       uploadedDir: dir,
       failedDir: dir,

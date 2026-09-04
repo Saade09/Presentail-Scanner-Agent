@@ -111,18 +111,18 @@ The HP ScanJet Pro 2600 f1 has a physical Scan button on the control panel.
 
 In Presentail OS, go to **Settings → Devices → Invoice Scanners** and click
 **Download Windows Agent**. The configurable-inbox release filename is
-`Presentail-Scanner-Agent-1.0.3-x64.exe`.
+`Presentail-Scanner-Agent-1.0.4-x64.exe`.
 
 Before installing, confirm the checksum and download URL in the matching
 `RELEASE-METADATA.json` published with the release:
 
-- Immutable release: `scanner-agent-v1.0.3`
-- Installer: `Presentail-Scanner-Agent-1.0.3-x64.exe`
-- Release page: `https://github.com/Saade09/Presentail-Scanner-Agent/releases/tag/scanner-agent-v1.0.3`
+- Immutable release: `scanner-agent-v1.0.4`
+- Installer: `Presentail-Scanner-Agent-1.0.4-x64.exe`
+- Release page: `https://github.com/Saade09/Presentail-Scanner-Agent/releases/tag/scanner-agent-v1.0.4`
 
-> **Installer artifact status: READY only after the 1.0.3 Windows workflow
-> publishes matching immutable and rolling-channel assets.
-> Physical commissioning status: MISSING.**
+> **Installer artifact status: PENDING — publish the 1.0.4 Windows workflow
+> artifact and matching immutable/rolling-channel assets before commissioning.
+> Physical commissioning status: PENDING.**
 > If the button says **Windows Agent unavailable**, do not use the unrelated
 > Print Agent Windows ZIP. The production release metadata or deployment must be
 > repaired before installation. Commissioning remains MISSING until the

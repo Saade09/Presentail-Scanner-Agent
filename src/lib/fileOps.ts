@@ -19,23 +19,26 @@ export function timestampedName(originalName: string): string {
  * Move a file from src to dest, creating dest parent directories as needed.
  * Falls back to copy+delete if rename fails across drives.
  */
-export function moveFile(src: string, dest: string): void {
+export function moveFile(src: string, dest: string): boolean {
   try {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.renameSync(src, dest);
     logger.info("FileOps: moved file", { src, dest });
+    return true;
   } catch (renameErr) {
     // Cross-device rename fails on Windows when drives differ — fall back to copy+delete
     try {
       fs.copyFileSync(src, dest);
       fs.unlinkSync(src);
       logger.info("FileOps: copy-moved file (cross-device)", { src, dest });
+      return true;
     } catch (copyErr) {
       logger.error("FileOps: failed to move file", {
         src,
         dest,
         error: String(copyErr),
       });
+      return false;
     }
   }
 }
@@ -64,7 +67,9 @@ export function getScannerDirs(inboxDir: string): ScannerDirs {
     failed: pathApi.join(parent, "Failed"),
   };
   const comparisonKey = (value: string) =>
-    windowsPath ? path.win32.normalize(value).toLowerCase() : path.resolve(value);
+    windowsPath
+      ? path.win32.normalize(value).toLowerCase()
+      : path.resolve(value);
   if (new Set(Object.values(dirs).map(comparisonKey)).size !== 3) {
     throw new Error(
       "Inbox, Uploaded, and Failed must resolve to three different folders.",

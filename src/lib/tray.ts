@@ -9,12 +9,12 @@ import type { TrayState } from "./retryScheduler.js";
 const ICON_FILES: Record<TrayState, string> = {
   connected: "icon-connected.png",
   uploading: "icon-uploading.png",
-  offline:   "icon-offline.png",
-  error:     "icon-error.png",
-  disabled:  "icon-error.png",
+  offline: "icon-offline.png",
+  error: "icon-error.png",
+  disabled: "icon-error.png",
   configuration: "icon-error.png",
   "inbox-error": "icon-error.png",
-  unpaired:  "icon-error.png",
+  unpaired: "icon-error.png",
 };
 
 interface TrayOptions {
@@ -36,7 +36,7 @@ function getIconPath(state: TrayState): string {
   return path.join(
     app.getAppPath(),
     "assets",
-    ICON_FILES[state] ?? ICON_FILES.error
+    ICON_FILES[state] ?? ICON_FILES.error,
   );
 }
 
@@ -102,22 +102,31 @@ function refreshTray(): void {
   const stateLabel: Record<TrayState, string> = {
     connected: "Connected",
     uploading: "Uploading…",
-    offline:   "Offline / queued — check network",
-    error:     "Credential rejected — re-pair required",
-    disabled:  "Station disabled — enable in Presentail OS",
-    configuration: "Setup required — select an active entity",
+    offline: "Offline / queued — check network",
+    error: "Credential rejected — re-pair required",
+    disabled: "Station disabled — scans queued",
+    configuration: "Setup required — scans queued",
     "inbox-error": "Inbox unavailable — check scan folder",
-    unpaired:  "Not paired",
+    unpaired: "Not paired",
   };
   const stateGuidance: Record<TrayState, string> = {
-    connected: "Ready to scan.",
+    connected:
+      queuedCount > 0
+        ? "Connected and ready to scan. Queued files will continue uploading automatically."
+        : "Ready to scan.",
     uploading: "Uploading a scan to Presentail OS.",
-    offline: "Presentail OS cannot be reached. Check the network; queued files will retry.",
-    error: "Presentail OS rejected this device credential. Generate a fresh code in Presentail OS and choose Re-pair station…",
-    disabled: "This station is disabled in Presentail OS. Enable it, generate a fresh code, and choose Re-pair station…",
-    configuration: "This station needs an active default entity. Fix it in Presentail OS, generate a fresh code, and choose Re-pair station…",
-    "inbox-error": "The scan folder could not be created or watched. Check the path and Windows folder permissions, then reopen settings.",
-    unpaired: "Generate a fresh pairing code in Presentail OS, then choose Open pairing / settings…",
+    offline:
+      "Presentail OS cannot be reached. Check the network; queued files will retry.",
+    error:
+      "Presentail OS rejected this device credential. Generate a fresh code in Presentail OS and choose Re-pair station…",
+    disabled:
+      "This station is disabled in Presentail OS. Enable it; queued scans will resume automatically.",
+    configuration:
+      "This station needs an active default entity. Fix it in Presentail OS; queued scans will resume automatically.",
+    "inbox-error":
+      "The scan folder could not be watched. Check the path, OneDrive sync, and Windows permissions; detection will restart automatically.",
+    unpaired:
+      "Generate a fresh pairing code in Presentail OS, then choose Open pairing / settings…",
   };
 
   const tooltipLines = [

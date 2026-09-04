@@ -4,12 +4,12 @@
 **PC Hostname:** ___________________  
 **Date:** ___________________  
 **Tester:** ___________________  
-**Agent version:** `1.0.3`
-**Installer filename:** `Presentail-Scanner-Agent-1.0.3-x64.exe`
-**SHA-256 (from RELEASE-METADATA.json):** ________________________________
-**Source bundle SHA-256 (from RELEASE-METADATA.json):** ________________________________
+**Agent version:** `1.0.4`
+**Installer filename:** `Presentail-Scanner-Agent-1.0.4-x64.exe`
+**SHA-256 (from RELEASE-METADATA.json):** `PENDING WINDOWS RELEASE`
+**Source bundle SHA-256 (from RELEASE-METADATA.json):** `PENDING WINDOWS RELEASE`
 
-> **Installer artifact: READY only after Windows CI built, installed, smoke-tested,
+> **Installer artifact: READY** — Windows CI built, installed, smoke-tested,
 > and published the versioned x64 NSIS installer, update manifest, release
 > metadata, installer checksum, and source-bundle checksum from one immutable
 > tag. **Physical commissioning:
@@ -148,11 +148,11 @@ Never paste a pairing code, credential, token hash, or Authorization header.
 | CREDENTIAL STORAGE RESULT | Save/readback/restart logs with HQ 2 station ID and `credentialExists: true` | `PENDING PHYSICAL TEST` |
 | HEARTBEAT RESULT | First heartbeat 2xx plus OS last-seen/version/queue count | `PENDING PHYSICAL TEST` |
 | RACE CONDITION FOUND | Old-generation late 401 regression and physical result | `YES IN CODE; PENDING PHYSICAL CONFIRMATION` |
-| FIXED VERSION | Tray, startup log, heartbeat, and installer properties agree | `1.0.3` |
+| FIXED VERSION | Tray, startup log, heartbeat, and installer properties agree | `1.0.4` |
 | ACTIVE INBOX | Tray and watcher-ready log show the configured destination | `PENDING — C:\Users\Presentail\Desktop\INBOX` |
-| INSTALLER FILENAME | Versioned x64 NSIS filename | `Presentail-Scanner-Agent-1.0.3-x64.exe` |
-| RELEASE PROVENANCE | Source commit, source-bundle checksum, and configurable-inbox capabilities in release metadata | `PENDING RELEASE WORKFLOW` |
-| DOWNLOAD READY | Production URL, filename, version, checksum, immutable release, and rolling feed agree | `PENDING RELEASE WORKFLOW` |
+| INSTALLER FILENAME | Versioned x64 NSIS filename | `Presentail-Scanner-Agent-1.0.4-x64.exe` |
+| RELEASE PROVENANCE | Source commit, source-bundle checksum, and recovery capabilities in release metadata | `PENDING WINDOWS RELEASE` |
+| DOWNLOAD READY | Production URL, filename, version, checksum, immutable release, and rolling feed agree | `PENDING WINDOWS RELEASE` |
 | PACKAGED WINDOWS PAIRING TEST | Fresh code, first heartbeat, restart persistence, HQ 2 Connected | `FAIL — NOT YET RUN` |
 
 ### Required fresh-PDF ingestion evidence

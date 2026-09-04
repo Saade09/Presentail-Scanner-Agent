@@ -1,6 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const queueRoot = fs.mkdtempSync(
+  path.join(os.tmpdir(), "scanner-heartbeat-queue-"),
+);
+process.env.APPDATA = queueRoot;
 const axios = require("axios");
+const queue = require("../dist/lib/queue.js");
 const {
   startHeartbeat,
   stopHeartbeat,
@@ -15,11 +23,17 @@ function deferredResponse() {
   return { promise, resolve };
 }
 
+test.after(() => {
+  queue.closeQueue();
+  fs.rmSync(queueRoot, { recursive: true, force: true });
+});
+
 test("drains every old heartbeat and ignores late 401 callbacks", async () => {
   const originalPatch = axios.patch;
   const requests = [];
-  axios.patch = () => {
+  axios.patch = (_url, body) => {
     const request = deferredResponse();
+    request.body = body;
     requests.push(request);
     return request.promise;
   };
@@ -29,12 +43,17 @@ test("drains every old heartbeat and ignores late 401 callbacks", async () => {
   const base = {
     serverUrl: "https://os.example.test",
     token: "not-a-real-token",
-    agentVersion: "1.0.3",
+    agentVersion: "1.0.4",
     onStationDisabled: () => undefined,
     onConfigurationRequired: () => undefined,
   };
 
   try {
+    const queuedId = queue.enqueue(
+      path.join(queueRoot, "pending-scan.pdf"),
+      "d".repeat(64),
+      new Date().toISOString(),
+    );
     startHeartbeat({
       ...base,
       onStateChange: () => undefined,
@@ -70,9 +89,12 @@ test("drains every old heartbeat and ignores late 401 callbacks", async () => {
       },
     });
     assert.equal(requests.length, 3);
+    assert.equal(requests[2].body.queued_count, 1);
     requests[2].resolve({ status: 200 });
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(newConnected, 1);
+    assert.equal(queue.getCount(), 1);
+    queue.markDone(queuedId);
     await stopHeartbeat();
   } finally {
     axios.patch = originalPatch;

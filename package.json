@@ -1,6 +1,6 @@
 {
   "name": "@workspace/scanner-agent",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Presentail Scanner Agent — Windows tray application for scan file upload",
   "main": "dist/main.js",
   "scripts": {
@@ -59,9 +59,7 @@
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
       ],
       "icon": "assets/icon.ico",
@@ -77,9 +75,7 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Presentail Scanner Agent",
       "runAfterFinish": true,
-      "installerLanguages": [
-        "en_US"
-      ],
+      "installerLanguages": ["en_US"],
       "include": "installer/custom-nsis.nsh"
     },
     "publish": {

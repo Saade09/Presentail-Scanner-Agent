@@ -1,10 +1,4 @@
-import {
-  app,
-  BrowserWindow,
-  ipcMain,
-  Notification,
-  session,
-} from "electron";
+import { app, BrowserWindow, ipcMain, Notification, session } from "electron";
 import * as path from "path";
 import * as os from "os";
 import * as fs from "fs";
@@ -21,7 +15,10 @@ import {
 } from "./lib/credential.js";
 import { closeQueue, getCount } from "./lib/queue.js";
 import { startWatcher, stopWatcher } from "./lib/watcher.js";
-import { startRetryScheduler, stopRetryScheduler } from "./lib/retryScheduler.js";
+import {
+  startRetryScheduler,
+  stopRetryScheduler,
+} from "./lib/retryScheduler.js";
 import {
   sendImmediateHeartbeat,
   startHeartbeat,
@@ -45,7 +42,9 @@ import { ServiceStateGate } from "./lib/serviceStateGate.js";
 
 export const AGENT_VERSION = app.getVersion();
 const INBOX_SETTINGS_FILE = "settings.json";
-const PACKAGED_RUNTIME_CHECK = process.argv.includes("--verify-packaged-runtime");
+const PACKAGED_RUNTIME_CHECK = process.argv.includes(
+  "--verify-packaged-runtime",
+);
 const FIRST_RUN_SMOKE_TEST = process.argv.includes("--smoke-test-first-run");
 const LOCAL_APP_DATA =
   process.env.LOCALAPPDATA || process.env.APPDATA || os.homedir();
@@ -61,7 +60,10 @@ const FIRST_RUN_SMOKE_PATH = path.join(
   "first-run-smoke.json",
 );
 
-function startupLog(phase: string, details: Record<string, unknown> = {}): void {
+function startupLog(
+  phase: string,
+  details: Record<string, unknown> = {},
+): void {
   try {
     fs.mkdirSync(STARTUP_LOG_DIR, { recursive: true });
     fs.appendFileSync(
@@ -124,7 +126,9 @@ let trayInitialized = false;
 let rePairResetPromise: Promise<boolean> | null = null;
 let pairingStatePrepared = false;
 const pairingAttemptLock = new PairingAttemptLock();
-const serviceStateGate = new ServiceStateGate((state) => updateTrayState(state));
+const serviceStateGate = new ServiceStateGate((state) =>
+  updateTrayState(state),
+);
 
 function getInboxSettingsPath(): string {
   return path.join(app.getPath("userData"), INBOX_SETTINGS_FILE);
@@ -201,9 +205,15 @@ function openSetupWindow(): void {
   });
   startupLog("pairing-window-created", { visible: setupWindow.isVisible() });
 
-  const setupPath = path.join(app.getAppPath(), "renderer", "setup", "index.html");
+  const setupPath = path.join(
+    app.getAppPath(),
+    "renderer",
+    "setup",
+    "index.html",
+  );
   logger.info("Setup window: loading renderer", { setupPath });
-  void setupWindow.loadFile(setupPath)
+  void setupWindow
+    .loadFile(setupPath)
     .then(() => {
       setupRendererLoaded = true;
       logger.info("Setup window: renderer loaded");
@@ -233,7 +243,7 @@ ipcMain.handle(
   "scanner:pair",
   async (
     _event,
-    payload: { serverUrl: string; pairingCode: string; inboxDir?: string }
+    payload: { serverUrl: string; pairingCode: string; inboxDir?: string },
   ) => {
     const { serverUrl, pairingCode } = payload;
     const releasePairingAttempt = pairingAttemptLock.acquire();
@@ -251,7 +261,8 @@ ipcMain.handle(
       return {
         success: false,
         category: "api_error",
-        error: "Enter a valid Presentail OS URL without credentials, query parameters, or fragments.",
+        error:
+          "Enter a valid Presentail OS URL without credentials, query parameters, or fragments.",
       };
     }
     let inboxDir: string;
@@ -333,7 +344,7 @@ ipcMain.handle(
           headers: { "X-Correlation-ID": requestCorrelationId },
           timeout: 15_000,
           validateStatus: () => true,
-        }
+        },
       );
 
       const responseBody = response.data as Record<string, unknown>;
@@ -418,7 +429,8 @@ ipcMain.handle(
           success: false,
           category: "secure_storage_failure",
           correlationId: record.correlationId,
-          error: "Windows Credential Manager could not save and verify the complete pairing record.",
+          error:
+            "Windows Credential Manager could not save and verify the complete pairing record.",
         };
       }
 
@@ -470,7 +482,7 @@ ipcMain.handle(
                 ? "The station was disabled before its first heartbeat. Enable it and generate a fresh code."
                 : category === "inactive_entity"
                   ? "The station has no active default entity. Fix it in Presentail OS and generate a fresh code."
-              : "The pairing record was saved, but Presentail OS could not verify the first heartbeat. Check the network and restart the agent to retry without using another code.",
+                  : "The pairing record was saved, but Presentail OS could not verify the first heartbeat. Check the network and restart the agent to retry without using another code.",
         };
       }
 
@@ -492,14 +504,14 @@ ipcMain.handle(
         isCredentialRevoked: false,
       };
 
-       startAgentServices(agentState, true, inboxDir);
+      startAgentServices(agentState, true, inboxDir);
       setupWindow?.close();
 
       return {
         success: true,
         category: "accepted",
         correlationId: verifiedRecord.correlationId,
-          inboxDir,
+        inboxDir,
       };
     } catch (err) {
       logger.error("IPC: pairing error", { error: String(err) });
@@ -520,7 +532,7 @@ ipcMain.handle(
     } finally {
       releasePairingAttempt();
     }
-  }
+  },
 );
 
 // ── Agent services ────────────────────────────────────────────────────────────
@@ -532,20 +544,22 @@ function onStateChange(state: TrayState): void {
 function onCredentialRevoked(): void {
   if (agentState) agentState.isCredentialRevoked = true;
   updateTrayState("error");
-  void stopAgentServices();
+  // Defer shutdown until the upload/heartbeat callback that confirmed
+  // revocation has returned, otherwise stopRetryScheduler can await itself.
+  setTimeout(() => void stopAgentServices(), 0);
   logger.error("Credential revoked — agent paused; user must re-pair");
 }
 
 function onStationDisabled(): void {
   updateTrayState("disabled");
-  void stopAgentServices();
-  logger.error("Station disabled — agent paused; enable it and re-pair");
+  logger.error("Station disabled — scans remain queued until it is enabled");
 }
 
 function onConfigurationRequired(): void {
   updateTrayState("configuration");
-  void stopAgentServices();
-  logger.error("Station configuration required — select an active entity and re-pair");
+  logger.error(
+    "Station configuration required — scans remain queued until an active entity is selected",
+  );
 }
 
 async function stopAgentServices(): Promise<void> {
@@ -605,6 +619,26 @@ function startAgentServices(
     onCredentialRevoked,
     onStationDisabled,
     onConfigurationRequired,
+    verifyDeviceSession: async (correlationId) => {
+      const result = await sendImmediateHeartbeat(
+        {
+          serverUrl: state.serverUrl,
+          token: state.token,
+          agentVersion: AGENT_VERSION,
+          onStateChange: () => undefined,
+          onCredentialRevoked: () => undefined,
+          onStationDisabled: () => undefined,
+          onConfigurationRequired: () => undefined,
+        },
+        correlationId,
+      );
+      if (result.kind === "success") return "valid";
+      if (result.kind === "credential-revoked") return "credential-revoked";
+      if (result.kind === "station-disabled") return "station-disabled";
+      if (result.kind === "configuration-required")
+        return "configuration-required";
+      return "unavailable";
+    },
   });
 
   startHeartbeat({
@@ -622,11 +656,7 @@ function startAgentServices(
     onReady: () => {
       if (agentState !== state || state.isCredentialRevoked) return;
       serviceStateGate.markReady(
-        getCount() > 0
-          ? "offline"
-          : initialHeartbeatAuthenticated
-            ? "connected"
-            : undefined,
+        initialHeartbeatAuthenticated ? "connected" : undefined,
       );
       startupLog("watcher-ready", { inbox });
     },
@@ -637,7 +667,6 @@ function startAgentServices(
       });
       startupLog("watcher-error", { inbox, error: String(error) });
       serviceStateGate.markInboxError();
-      void stopWatcher();
     },
   });
   startupLog("watcher-initialized", { inbox });
@@ -667,7 +696,9 @@ async function resetAgentForPairing(): Promise<boolean> {
   });
   if (!cleared) {
     updateTrayState("error");
-    logger.error("Re-pair aborted — previous pairing state could not be cleared");
+    logger.error(
+      "Re-pair aborted — previous pairing state could not be cleared",
+    );
     return false;
   }
 
@@ -748,7 +779,9 @@ function setupAutoUpdater(): void {
         });
 
         notification.on("click", () => {
-          logger.info("Auto-update: user triggered download", { version: info.version });
+          logger.info("Auto-update: user triggered download", {
+            version: info.version,
+          });
           autoUpdater.downloadUpdate().catch((err: Error) => {
             logger.warn("Auto-update: download failed", { error: String(err) });
           });
@@ -762,7 +795,9 @@ function setupAutoUpdater(): void {
       });
 
       autoUpdater.on("update-downloaded", (info: { version: string }) => {
-        logger.info("Auto-update: download complete", { version: info.version });
+        logger.info("Auto-update: download complete", {
+          version: info.version,
+        });
 
         new Notification({
           title: "Presentail Scanner Agent",
@@ -772,7 +807,9 @@ function setupAutoUpdater(): void {
 
       autoUpdater.on("error", (err: Error) => {
         // Log as warn — update failures are non-fatal
-        logger.warn("Auto-update: error during check/download", { error: String(err) });
+        logger.warn("Auto-update: error during check/download", {
+          error: String(err),
+        });
       });
 
       // Check on startup (short delay to let the app settle)
@@ -788,7 +825,9 @@ function setupAutoUpdater(): void {
       interval.unref();
     })
     .catch((err: Error) => {
-      logger.warn("Auto-update: failed to load electron-updater", { error: String(err) });
+      logger.warn("Auto-update: failed to load electron-updater", {
+        error: String(err),
+      });
     });
 }
 
@@ -816,7 +855,10 @@ app.on("ready", async () => {
     return;
   }
 
-  logger.info("Agent starting", { version: AGENT_VERSION, platform: process.platform });
+  logger.info("Agent starting", {
+    version: AGENT_VERSION,
+    platform: process.platform,
+  });
 
   // Set CSP for renderer
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -873,9 +915,12 @@ app.on("ready", async () => {
         }
       }
       if (!savedPairing) {
-        logger.warn("Legacy pairing migration deferred; split record preserved", {
-          heartbeatResult: migrationHeartbeat.kind,
-        });
+        logger.warn(
+          "Legacy pairing migration deferred; split record preserved",
+          {
+            heartbeatResult: migrationHeartbeat.kind,
+          },
+        );
         agentState = {
           serverUrl: normalizeServerUrl(legacyPairing.serverUrl),
           token: legacyPairing.token,
@@ -946,11 +991,14 @@ app.on("ready", async () => {
       );
       return;
     }
-    logger.info("Verified pairing record authenticated — starting agent services", {
-      stationId: savedPairing.station.id,
-      version: AGENT_VERSION,
-      correlationId: savedPairing.correlationId,
-    });
+    logger.info(
+      "Verified pairing record authenticated — starting agent services",
+      {
+        stationId: savedPairing.station.id,
+        version: AGENT_VERSION,
+        correlationId: savedPairing.correlationId,
+      },
+    );
     agentState = {
       serverUrl: savedPairing.serverUrl,
       token: savedPairing.token,
@@ -962,9 +1010,12 @@ app.on("ready", async () => {
     };
     startAgentServices(agentState, true);
   } else if (agentState) {
-    logger.info("Starting with preserved legacy pairing while migration is deferred", {
-      version: AGENT_VERSION,
-    });
+    logger.info(
+      "Starting with preserved legacy pairing while migration is deferred",
+      {
+        version: AGENT_VERSION,
+      },
+    );
     startAgentServices(agentState);
   } else {
     startupLog("unpaired-first-run");
@@ -1007,7 +1058,10 @@ app.on("before-quit", () => {
 
 // Catch unhandled exceptions and log them (never crash silently)
 process.on("uncaughtException", (err) => {
-  startupLog("fatal-uncaught-exception", { error: String(err), stack: err.stack });
+  startupLog("fatal-uncaught-exception", {
+    error: String(err),
+    stack: err.stack,
+  });
   logger.error("Uncaught exception", { error: String(err), stack: err.stack });
 });
 

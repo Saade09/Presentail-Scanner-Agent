@@ -21,13 +21,10 @@ export function notifySuccess(filename: string, isDuplicate: boolean): void {
   if (isDuplicate) {
     notify(
       `${APP_NAME} — Already imported`,
-      `"${filename}" was already imported into Presentail OS.`
+      `"${filename}" was already imported into Presentail OS.`,
     );
   } else {
-    notify(
-      `${APP_NAME} — Uploaded`,
-      `"${filename}" uploaded successfully.`
-    );
+    notify(`${APP_NAME} — Uploaded`, `"${filename}" uploaded successfully.`);
   }
 }
 
@@ -35,7 +32,7 @@ export function notifySuccess(filename: string, isDuplicate: boolean): void {
 export function notifyQueued(filename: string): void {
   notify(
     `${APP_NAME} — Queued`,
-    `"${filename}" could not be uploaded right now and has been queued for retry.`
+    `"${filename}" could not be uploaded right now and has been queued for retry.`,
   );
 }
 
@@ -43,7 +40,7 @@ export function notifyQueued(filename: string): void {
 export function notifyPermanentFailure(filename: string, reason: string): void {
   notify(
     `${APP_NAME} — Could not upload`,
-    `"${filename}" failed: ${reason}. Moved to Failed folder.`
+    `"${filename}" failed: ${reason}. Moved to Failed folder.`,
   );
 }
 
@@ -51,7 +48,7 @@ export function notifyPermanentFailure(filename: string, reason: string): void {
 export function notifyCredentialRevoked(): void {
   notify(
     `${APP_NAME} — Re-pair required`,
-    "This device's credential was revoked. Open the tray icon to re-pair."
+    "This device's credential was revoked. Open the tray icon to re-pair.",
   );
 }
 
@@ -59,7 +56,7 @@ export function notifyCredentialRevoked(): void {
 export function notifyStationDisabled(): void {
   notify(
     `${APP_NAME} — Station disabled`,
-    "Enable this scanner station in Presentail OS, then generate a fresh code and re-pair."
+    "Enable this scanner station in Presentail OS. Queued scans will retry automatically.",
   );
 }
 
@@ -67,6 +64,6 @@ export function notifyStationDisabled(): void {
 export function notifyConfigurationRequired(): void {
   notify(
     `${APP_NAME} — Setup required`,
-    "Select an active default entity in Presentail OS, then generate a fresh code and re-pair."
+    "Select an active default entity in Presentail OS. Queued scans will retry automatically.",
   );
 }

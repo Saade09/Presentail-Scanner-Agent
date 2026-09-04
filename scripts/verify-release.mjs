@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,6 +25,7 @@ const provenanceFiles = {
     "startAgentServices(agentState, true, inboxDir)",
     "watcher_js_1.startWatcher)({",
     "inboxDir: inbox",
+    "verifyDeviceSession: async (correlationId)",
   ],
   "dist/lib/inboxSettings.js": [
     "Scan inbox path is required.",
@@ -27,18 +34,21 @@ const provenanceFiles = {
   ],
   "dist/lib/watcher.js": [
     "const { inboxDir, onError, onReady } = options",
-    "chokidar_1.default.watch(inboxDir",
+    "watcherFactory(inboxDir",
+    "Watcher: restarting after recoverable error",
+    ".presentail-queue",
+    "stable payload claimed for durable upload",
+    "Queue depth is displayed separately",
   ],
   "dist/lib/retryScheduler.js": [
     "inboxDir,",
     "uploadedDir,",
     "failedDir,",
     "Upload complete",
+    "Upload authentication rejected — confirming active device session",
+    "activeUploadHashes",
   ],
-  "dist/lib/tray.js": [
-    "Scan inbox:",
-    "Version:",
-  ],
+  "dist/lib/tray.js": ["Scan inbox:", "Version:"],
   "renderer/setup/setup.js": [
     "window.scanner.getSettings()",
     "inboxDir",
@@ -85,7 +95,8 @@ function isPeX64(path) {
 
 function readAsarHeader(archivePath) {
   const archive = readFileSync(archivePath);
-  if (archive.length < 16) throw new Error(`ASAR archive is too small: ${archivePath}`);
+  if (archive.length < 16)
+    throw new Error(`ASAR archive is too small: ${archivePath}`);
 
   const headerSize = archive.readUInt32LE(4);
   const headerStart = 8;
@@ -137,7 +148,9 @@ function verifyCurrentSourceWasPackaged() {
     const text = packaged.toString("utf8");
     for (const marker of markers) {
       if (!text.includes(marker)) {
-        throw new Error(`Packaged ${filename} is missing custom-inbox marker: ${marker}`);
+        throw new Error(
+          `Packaged ${filename} is missing custom-inbox marker: ${marker}`,
+        );
       }
     }
     bundleHash.update(filename);
@@ -151,7 +164,9 @@ function verifyCurrentSourceWasPackaged() {
 requirePath(installerPath, "Versioned x64 NSIS installer");
 requirePath(manifestPath, "electron-updater manifest");
 if (statSync(installerPath).size < 1_000_000) {
-  throw new Error(`Installer is unexpectedly small: ${statSync(installerPath).size} bytes`);
+  throw new Error(
+    `Installer is unexpectedly small: ${statSync(installerPath).size} bytes`,
+  );
 }
 
 const unpacked = join(releaseDir, "win-unpacked", "resources");
@@ -174,7 +189,9 @@ for (const packageName of ["keytar", "better-sqlite3"]) {
   const nativeBinaries = findNativeBinaries(packageDir);
   const windowsNativeBinaries = nativeBinaries.filter(isPeX64);
   if (windowsNativeBinaries.length === 0) {
-    throw new Error(`${packageName} contains no packaged Windows x64 .node binary`);
+    throw new Error(
+      `${packageName} contains no packaged Windows x64 .node binary`,
+    );
   }
 }
 
@@ -183,7 +200,10 @@ const sourceBundleSha256 = verifyCurrentSourceWasPackaged();
 const sha256 = createHash("sha256")
   .update(readFileSync(installerPath))
   .digest("hex");
-writeFileSync(join(releaseDir, "SHA256SUMS.txt"), `${sha256}  ${expectedName}\n`);
+writeFileSync(
+  join(releaseDir, "SHA256SUMS.txt"),
+  `${sha256}  ${expectedName}\n`,
+);
 writeFileSync(
   join(releaseDir, "RELEASE-METADATA.json"),
   `${JSON.stringify(
@@ -194,7 +214,16 @@ writeFileSync(
       sha256,
       sourceBundleSha256,
       sourceCommit: process.env.GITHUB_SHA || null,
-      capabilities: ["configurable-inbox", "custom-inbox-watcher", "sibling-uploaded-failed"],
+      capabilities: [
+        "configurable-inbox",
+        "custom-inbox-watcher",
+        "sibling-uploaded-failed",
+        "post-scan-auth-confirmation",
+        "watcher-auto-recovery",
+        "duplicate-safe-queue-retry",
+        "durable-inbox-staging",
+        "connected-while-queue-drains",
+      ],
       updateManifest: "latest.yml",
       downloadUrl:
         `https://github.com/Saade09/Presentail-Scanner-Agent/releases/download/` +
@@ -209,7 +238,9 @@ const unexpectedInstallers = readdirSync(releaseDir).filter(
   (name) => name.endsWith(".exe") && name !== expectedName,
 );
 if (unexpectedInstallers.length) {
-  throw new Error(`Unexpected installer filename(s): ${unexpectedInstallers.join(", ")}`);
+  throw new Error(
+    `Unexpected installer filename(s): ${unexpectedInstallers.join(", ")}`,
+  );
 }
 
 console.log(`Verified ${expectedName}`);
