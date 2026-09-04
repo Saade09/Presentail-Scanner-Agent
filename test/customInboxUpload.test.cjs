@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const chokidar = require("chokidar");
 const queueRoot = fs.mkdtempSync(path.join(os.tmpdir(), "scanner-upload-queue-"));
 process.env.APPDATA = queueRoot;
 
@@ -15,6 +16,16 @@ const {
   stopRetryScheduler,
 } = require("../dist/lib/retryScheduler.js");
 const { startWatcher, stopWatcher } = require("../dist/lib/watcher.js");
+
+const windowsSafeWatcherFactory =
+  process.platform === "win32"
+    ? (watchPath, options) =>
+        chokidar.watch(watchPath, {
+          ...options,
+          usePolling: true,
+          interval: 50,
+        })
+    : undefined;
 
 async function waitFor(predicate, timeoutMs = 8_000) {
   const deadline = Date.now() + timeoutMs;
@@ -56,6 +67,7 @@ test("watcher uploads an extensionless custom-inbox scan to its sibling Uploaded
         inboxDir: dirs.inbox,
         onReady: resolve,
         onError: reject,
+        watcherFactory: windowsSafeWatcherFactory,
       });
     });
     fs.writeFileSync(scanPath, "%PDF HP test");
