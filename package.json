@@ -11,7 +11,7 @@
     "verify-version": "node scripts/verify-version.mjs",
     "verify-release": "node scripts/verify-release.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm run build && node --test test/*.test.cjs",
+    "test": "pnpm run build && node --test --test-concurrency=1 test/*.test.cjs",
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
