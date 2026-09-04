@@ -33,12 +33,12 @@ const provenanceFiles = {
     "Could not save the scan inbox setting",
   ],
   "dist/lib/watcher.js": [
-    "const { inboxDir, onError, onReady } = options",
+    "restartDelayMs = WATCHER_RESTART_DELAY_MS",
     "watcherFactory(inboxDir",
     "Watcher: restarting after recoverable error",
     ".presentail-queue",
     "stable payload claimed for durable upload",
-    "Queue depth is displayed separately",
+    "recoverStagedFiles(inboxDir, restartDelayMs)",
   ],
   "dist/lib/retryScheduler.js": [
     "inboxDir,",
